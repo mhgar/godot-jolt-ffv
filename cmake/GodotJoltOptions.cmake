@@ -9,6 +9,11 @@ else()
 	set(GDJ_STATIC_RUNTIME_LIBRARY FALSE)
 endif()
 
+set(GDJOLT_CROSS_PLATFORM_DETERMINISTIC FALSE
+	CACHE BOOL
+	"Compile in such a way as to attempt to keep things deterministic across platforms."
+)
+
 if(NOT IOS AND NOT ANDROID)
 	set(GDJ_USE_MIMALLOC TRUE
 		CACHE BOOL

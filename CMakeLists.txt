@@ -28,6 +28,9 @@ set(PROJECT_VERSION_STATUS ${GDJ_VERSION_STATUS})
 set(PROJECT_VERSION_WITH_STATUS ${PROJECT_VERSION}-${PROJECT_VERSION_STATUS})
 set(PROJECT_VERSION_WITH_BUILD ${PROJECT_VERSION_WITH_STATUS}+${PROJECT_VERSION_BUILD})
 
+set(CROSS_PLATFORM_DETERMINISTIC ON)
+set(GDJOLTCROSS_PLATFORM_DETERMINISTIC ON)
+
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS ${source_dir}/*.cpp)
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS ${source_dir}/*.hpp)
 
@@ -110,6 +113,9 @@ set(use_static_crt $<BOOL:${GDJ_STATIC_RUNTIME_LIBRARY}>)
 set(msvcrt_debug $<$<CONFIG:Debug,EditorDebug>:Debug>)
 set(msvcrt_dll $<$<NOT:${use_static_crt}>:DLL>)
 set(msvcrt MultiThreaded${msvcrt_debug}${msvcrt_dll})
+
+set(deterministic $<BOOL:${GDJOLT_CROSS_PLATFORM_DETERMINISTIC}>)
+set(not_deterministic $<NOT:${deterministic}>)
 
 set(target_avx512 $<STREQUAL:${GDJ_X86_INSTRUCTION_SET},AVX512>)
 set(target_avx2 $<STREQUAL:${GDJ_X86_INSTRUCTION_SET},AVX2>)
@@ -214,6 +220,7 @@ if(MSVC)
 		PRIVATE $<${target_avx512}:/arch:AVX512> # Enable AVX-512 instructions
 		PRIVATE $<${is_msvc_cl}:/MP> # Multi-threaded compilation
 		PRIVATE $<${is_clang_cl}:-Qunused-arguments> # Disable warnings about unused arguments
+		PRIVATE $<${not_deterministic}:/fp:fast> # Enable aggressive floating-point optimizations
 	)
 
 	set(pdb_file_name $<TARGET_PDB_FILE_NAME:godot-jolt>)
@@ -256,6 +263,8 @@ else()
 		PRIVATE $<${use_avx512}:-mavx512vl> # Enable AVX-512 Vector Length instructions
 		PRIVATE $<${use_avx512}:-mavx512dq> # Enable AVX-512 Doubleword and Quadword instructions
 		PRIVATE $<${is_gcc}:-no-integrated-cpp> # Workaround for GCC ignoring _Pragma (GCC#53431)
+		PRIVATE $<${deterministic}:-ffp-contract=off> # Disable floating-point contractions
+		PRIVATE $<${not_deterministic}:-ffast-math> # Enable aggressive floating-point optimizations
 	)
 
 	if(APPLE)

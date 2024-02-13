@@ -53,6 +53,8 @@ JoltSpace3D::JoltSpace3D(JPH::JobSystem* p_job_system)
 	settings.mPointVelocitySleepThreshold = JoltProjectSettings::get_sleep_velocity_threshold();
 	settings.mAllowSleeping = JoltProjectSettings::is_sleep_enabled();
 
+	settings.mDeterministicSimulation = true;
+
 	physics_system->SetPhysicsSettings(settings);
 	physics_system->SetGravity(JPH::Vec3::sZero());
 	physics_system->SetContactListener(contact_listener);

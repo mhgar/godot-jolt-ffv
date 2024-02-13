@@ -8,6 +8,7 @@ set(configurations
 	Distribution
 )
 
+set(deterministic $<BOOL:${GDJOLT_CROSS_PLATFORM_DETERMINISTIC}>)
 set(use_avx512 $<BOOL:${GDJ_USE_AVX512}>)
 set(use_avx2 $<BOOL:${GDJ_USE_AVX2}>)
 set(use_bmi1 $<BOOL:${GDJ_USE_BMI1}>)
@@ -40,6 +41,7 @@ gdj_add_external_library(jolt "${configurations}"
 	INCLUDE_DIRECTORIES
 		<SOURCE_DIR>
 	COMPILE_DEFINITIONS
+		$<${deterministic}:JPH_CROSS_PLATFORM_DETERMINISTIC>
 		$<${use_avx512}:JPH_USE_AVX512>
 		$<${use_avx2}:JPH_USE_AVX2>
 		$<${use_bmi1}:JPH_USE_TZCNT>
@@ -60,6 +62,7 @@ gdj_add_external_library(jolt "${configurations}"
 		-DTARGET_SAMPLES=FALSE
 		-DTARGET_UNIT_TESTS=FALSE
 		-DTARGET_VIEWER=FALSE
+		-DCROSS_PLATFORM_DETERMINISTIC=${GDJOLT_CROSS_PLATFORM_DETERMINISTIC}
 		-DINTERPROCEDURAL_OPTIMIZATION=${GDJ_INTERPROCEDURAL_OPTIMIZATION}
 		-DUSE_AVX512=${GDJ_USE_AVX512}
 		-DUSE_AVX2=${GDJ_USE_AVX2}

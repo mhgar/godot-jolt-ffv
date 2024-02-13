@@ -48,6 +48,12 @@ defaults by passing `-DGDJ_SOME_VARIABLE=VALUE` to CMake.
   - ⚠️ This flag is not available on Apple platforms.
   - Possible values are [`NONE`, `SSE2`, `AVX`, `AVX2`, `AVX512`]
   - Default is `SSE2`
+- `GDJOLT_CROSS_PLATFORM_DETERMINISTIC`
+  - Compiles in such a way as to attempt to keep things deterministic across *different* platforms.
+  - ⚠️ While this flag makes Jolt itself deterministic, the Godot engine and/or this extension may
+    not be, and likely aren't, which makes this flag nothing but a performance cost.
+  - You do not need this for determinism on the same platform (assuming identical binary).
+  - Default is `FALSE`.
 - `GDJ_INTERPROCEDURAL_OPTIMIZATION`
   - Enables interprocedural optimizations for any optimized builds, also known as link-time
     optimizations or link-time code generation.
