@@ -1,5 +1,6 @@
 #include "jolt_shaped_object_impl_3d.hpp"
 
+#include "shapes/jolt_custom_double_sided_shape.hpp"
 #include "shapes/jolt_custom_empty_shape.hpp"
 #include "shapes/jolt_shape_impl_3d.hpp"
 #include "spaces/jolt_space_3d.hpp"
@@ -109,56 +110,40 @@ Vector3 JoltShapedObjectImpl3D::get_angular_velocity() const {
 }
 
 JPH::ShapeRefC JoltShapedObjectImpl3D::try_build_shape() {
-	int32_t built_shape_count = 0;
-	const JoltShapeInstance3D* last_built_shape = nullptr;
+	int32_t built_shapes = 0;
 
 	for (JoltShapeInstance3D& shape : shapes) {
 		if (shape.is_enabled() && shape.try_build()) {
-			built_shape_count += 1;
-			last_built_shape = &shape;
+			built_shapes += 1;
 		}
 	}
 
-	if (built_shape_count == 0) {
-		return {};
-	}
+	QUIET_FAIL_COND_D(built_shapes == 0);
 
-	JPH::ShapeRefC result;
+	JPH::ShapeRefC result = built_shapes == 1
+		? _try_build_single_shape()
+		: _try_build_compound_shape();
 
-	if (built_shape_count == 1) {
-		result = JoltShapeImpl3D::with_transform(
-			last_built_shape->get_jolt_ref(),
-			last_built_shape->get_transform_unscaled(),
-			last_built_shape->get_scale()
-		);
-	} else {
-		int32_t shape_index = 0;
-
-		result = JoltShapeImpl3D::as_compound([&](auto&& p_add_shape) {
-			if (shape_index >= shapes.size()) {
-				return false;
-			}
-
-			const JoltShapeInstance3D& shape = shapes[shape_index++];
-
-			if (shape.is_enabled() && shape.is_built()) {
-				p_add_shape(
-					shape.get_jolt_ref(),
-					shape.get_transform_unscaled(),
-					shape.get_scale()
-				);
-			}
-
-			return true;
-		});
-	}
+	QUIET_FAIL_NULL_D(result);
 
 	if (has_custom_center_of_mass()) {
 		result = JoltShapeImpl3D::with_center_of_mass(result, get_center_of_mass_custom());
 	}
 
-	if (scale != Vector3(1.0f, 1.0f, 1.0f)) {
-		result = JoltShapeImpl3D::with_scale(result, scale);
+	if (scale != Vector3(1, 1, 1)) {
+		Vector3 actual_scale = scale;
+
+		ENSURE_SCALE_VALID(
+			result,
+			actual_scale,
+			vformat("Failed to correctly scale body '%s'.", to_string())
+		);
+
+		result = JoltShapeImpl3D::with_scale(result, actual_scale);
+	}
+
+	if (is_area()) {
+		result = JoltShapeImpl3D::with_double_sided(result);
 	}
 
 	return result;
@@ -168,7 +153,11 @@ JPH::ShapeRefC JoltShapedObjectImpl3D::build_shape() {
 	JPH::ShapeRefC new_shape = try_build_shape();
 
 	if (new_shape == nullptr) {
-		new_shape = new JoltCustomEmptyShape();
+		if (has_custom_center_of_mass()) {
+			new_shape = new JoltCustomEmptyShape(to_jolt(get_center_of_mass_custom()));
+		} else {
+			new_shape = new JoltCustomEmptyShape();
+		}
 	}
 
 	return new_shape;
@@ -200,6 +189,15 @@ void JoltShapedObjectImpl3D::add_shape(
 	Transform3D p_transform,
 	bool p_disabled
 ) {
+	ENSURE_SCALE_NOT_ZERO(
+		p_transform,
+		vformat(
+			"An invalid transform was passed when adding shape at index %d to physics body '%s'.",
+			shapes.size(),
+			to_string()
+		)
+	);
+
 	Vector3 shape_scale;
 	Math::decompose(p_transform, shape_scale);
 
@@ -287,6 +285,21 @@ Vector3 JoltShapedObjectImpl3D::get_shape_scale(int32_t p_index) const {
 void JoltShapedObjectImpl3D::set_shape_transform(int32_t p_index, Transform3D p_transform) {
 	ERR_FAIL_INDEX(p_index, shapes.size());
 
+#ifdef GDJ_CONFIG_EDITOR
+	if (unlikely(p_transform.basis.determinant() == 0.0f)) {
+		ERR_PRINT(vformat(
+			"Failed to set transform for shape at index %d of body '%s'. "
+			"Its basis was found to be singular, which is not supported by Godot Jolt. "
+			"This is likely caused by one or more axes having a scale of zero. "
+			"Its basis (and thus its scale) will be treated as identity.",
+			p_index,
+			to_string()
+		));
+
+		p_transform.basis = Basis();
+	}
+#endif // GDJ_CONFIG_EDITOR
+
 	Vector3 new_scale;
 	Math::decompose(p_transform, new_scale);
 
@@ -330,6 +343,100 @@ void JoltShapedObjectImpl3D::post_step(float p_step, JPH::Body& p_jolt_body) {
 	JoltObjectImpl3D::post_step(p_step, p_jolt_body);
 
 	previous_jolt_shape = nullptr;
+}
+
+JPH::ShapeRefC JoltShapedObjectImpl3D::_try_build_single_shape() {
+	// NOLINTNEXTLINE(modernize-loop-convert)
+	for (int32_t shape_index = 0; shape_index < shapes.size(); ++shape_index) {
+		const JoltShapeInstance3D& sub_shape = shapes[shape_index];
+
+		if (!sub_shape.is_enabled() || !sub_shape.is_built()) {
+			continue;
+		}
+
+		JPH::ShapeRefC jolt_sub_shape = sub_shape.get_jolt_ref();
+
+		Vector3 sub_shape_scale = sub_shape.get_scale();
+		const Transform3D sub_shape_transform = sub_shape.get_transform_unscaled();
+
+		if (sub_shape_scale != Vector3(1, 1, 1)) {
+			ENSURE_SCALE_VALID(
+				jolt_sub_shape,
+				sub_shape_scale,
+				vformat(
+					"Failed to correctly scale shape at index %d in body '%s'.",
+					shape_index,
+					to_string()
+				)
+			);
+
+			jolt_sub_shape = JoltShapeImpl3D::with_scale(jolt_sub_shape, sub_shape_scale);
+		}
+
+		if (sub_shape_transform != Transform3D()) {
+			jolt_sub_shape = JoltShapeImpl3D::with_basis_origin(
+				jolt_sub_shape,
+				sub_shape_transform.basis,
+				sub_shape_transform.origin
+			);
+		}
+
+		return jolt_sub_shape;
+	}
+
+	return {};
+}
+
+JPH::ShapeRefC JoltShapedObjectImpl3D::_try_build_compound_shape() {
+	JPH::StaticCompoundShapeSettings compound_shape_settings;
+
+	// NOLINTNEXTLINE(modernize-loop-convert)
+	for (int32_t shape_index = 0; shape_index < shapes.size(); ++shape_index) {
+		const JoltShapeInstance3D& sub_shape = shapes[shape_index];
+
+		if (!sub_shape.is_enabled() || !sub_shape.is_built()) {
+			continue;
+		}
+
+		JPH::ShapeRefC jolt_sub_shape = sub_shape.get_jolt_ref();
+
+		Vector3 sub_shape_scale = sub_shape.get_scale();
+		const Transform3D sub_shape_transform = sub_shape.get_transform_unscaled();
+
+		if (sub_shape_scale != Vector3(1, 1, 1)) {
+			ENSURE_SCALE_VALID(
+				jolt_sub_shape,
+				sub_shape_scale,
+				vformat(
+					"Failed to correctly scale shape at index %d in body '%s'.",
+					shape_index,
+					to_string()
+				)
+			);
+
+			jolt_sub_shape = JoltShapeImpl3D::with_scale(jolt_sub_shape, sub_shape_scale);
+		}
+
+		compound_shape_settings.AddShape(
+			to_jolt(sub_shape_transform.origin),
+			to_jolt(sub_shape_transform.basis),
+			jolt_sub_shape
+		);
+	}
+
+	const JPH::ShapeSettings::ShapeResult shape_result = compound_shape_settings.Create();
+
+	ERR_FAIL_COND_D_MSG(
+		shape_result.HasError(),
+		vformat(
+			"Failed to create compound shape with sub-shape count '%d'. "
+			"It returned the following error: '%s'.",
+			(int32_t)compound_shape_settings.mSubShapes.size(),
+			to_godot(shape_result.GetError())
+		)
+	);
+
+	return shape_result.Get();
 }
 
 void JoltShapedObjectImpl3D::_shapes_changed() {

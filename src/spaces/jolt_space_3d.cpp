@@ -3,6 +3,7 @@
 #include "joints/jolt_joint_impl_3d.hpp"
 #include "objects/jolt_area_impl_3d.hpp"
 #include "objects/jolt_body_impl_3d.hpp"
+#include "servers/jolt_physics_server_3d.hpp"
 #include "servers/jolt_project_settings.hpp"
 #include "shapes/jolt_custom_shape_type.hpp"
 #include "shapes/jolt_shape_impl_3d.hpp"
@@ -33,7 +34,7 @@ JoltSpace3D::JoltSpace3D(JPH::JobSystem* p_job_system)
 	physics_system->Init(
 		(JPH::uint)JoltProjectSettings::get_max_bodies(),
 		0,
-		(JPH::uint)JoltProjectSettings::get_max_body_pairs(),
+		(JPH::uint)JoltProjectSettings::get_max_pairs(),
 		(JPH::uint)JoltProjectSettings::get_max_contact_constraints(),
 		*layer_mapper,
 		*layer_mapper,
@@ -46,11 +47,14 @@ JoltSpace3D::JoltSpace3D(JPH::JobSystem* p_job_system)
 	settings.mPenetrationSlop = JoltProjectSettings::get_contact_penetration();
 	settings.mLinearCastThreshold = JoltProjectSettings::get_ccd_movement_threshold();
 	settings.mLinearCastMaxPenetration = JoltProjectSettings::get_ccd_max_penetration();
+	settings.mBodyPairCacheMaxDeltaPositionSq = JoltProjectSettings::get_pair_cache_distance();
+	settings.mBodyPairCacheCosMaxDeltaRotationDiv2 = JoltProjectSettings::get_pair_cache_angle();
 	settings.mNumVelocitySteps = (JPH::uint)JoltProjectSettings::get_velocity_iterations();
 	settings.mNumPositionSteps = (JPH::uint)JoltProjectSettings::get_position_iterations();
 	settings.mMinVelocityForRestitution = JoltProjectSettings::get_bounce_velocity_threshold();
 	settings.mTimeBeforeSleep = JoltProjectSettings::get_sleep_time_threshold();
 	settings.mPointVelocitySleepThreshold = JoltProjectSettings::get_sleep_velocity_threshold();
+	settings.mUseBodyPairContactCache = JoltProjectSettings::is_pair_cache_enabled();
 	settings.mAllowSleeping = JoltProjectSettings::is_sleep_enabled();
 
 	settings.mDeterministicSimulation = true;
@@ -58,6 +62,7 @@ JoltSpace3D::JoltSpace3D(JPH::JobSystem* p_job_system)
 	physics_system->SetPhysicsSettings(settings);
 	physics_system->SetGravity(JPH::Vec3::sZero());
 	physics_system->SetContactListener(contact_listener);
+	physics_system->SetSoftBodyContactListener(contact_listener);
 
 	physics_system->SetCombineFriction(
 		[](const JPH::Body& p_body1,
@@ -124,7 +129,7 @@ void JoltSpace3D::step(float p_step) {
 			"Jolt's body pair cache exceeded capacity and contacts were ignored. "
 			"Consider increasing maximum number of body pairs in project settings. "
 			"Maximum number of body pairs is currently set to %d.",
-			JoltProjectSettings::get_max_body_pairs()
+			JoltProjectSettings::get_max_pairs()
 		));
 	}
 
@@ -142,6 +147,7 @@ void JoltSpace3D::step(float p_step) {
 	_post_step(p_step);
 
 	has_stepped = true;
+	bodies_added_since_optimizing = 0;
 }
 
 void JoltSpace3D::call_queries() {
@@ -208,7 +214,7 @@ double JoltSpace3D::get_param(PhysicsServer3D::SpaceParameter p_param) const {
 			return DEFAULT_SOLVER_ITERATIONS;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled space parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled space parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -267,7 +273,7 @@ void JoltSpace3D::set_param(
 			);
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled space parameter: '%d'", p_param));
+			ERR_FAIL_REPORT(vformat("Unhandled space parameter: '%d'.", p_param));
 		} break;
 	}
 }
@@ -364,6 +370,84 @@ void JoltSpace3D::set_default_area(JoltAreaImpl3D* p_area) {
 	}
 }
 
+JPH::BodyID JoltSpace3D::add_rigid_body(
+	const JoltObjectImpl3D& p_object,
+	const JPH::BodyCreationSettings& p_settings
+) {
+	const JPH::BodyID body_id = get_body_iface().CreateAndAddBody(
+		p_settings,
+		// HACK(mihe): Since `BODY_STATE_TRANSFORM` will be set right after creation it's more or
+		// less impossible to have a body be sleeping when created, so we default to always starting
+		// out as awake/active.
+		JPH::EActivation::Activate
+	);
+
+	ERR_FAIL_COND_D_MSG(
+		body_id.IsInvalid(),
+		vformat(
+			"Failed to create underlying Jolt body for '%s'. "
+			"Consider increasing maximum number of bodies in project settings. "
+			"Maximum number of bodies is currently set to %d.",
+			p_object.to_string(),
+			JoltProjectSettings::get_max_bodies()
+		)
+	);
+
+	bodies_added_since_optimizing += 1;
+
+	return body_id;
+}
+
+JPH::BodyID JoltSpace3D::add_soft_body(
+	const JoltObjectImpl3D& p_object,
+	const JPH::SoftBodyCreationSettings& p_settings
+) {
+	const JPH::BodyID body_id = get_body_iface().CreateAndAddSoftBody(
+		p_settings,
+		JPH::EActivation::Activate
+	);
+
+	ERR_FAIL_COND_D_MSG(
+		body_id.IsInvalid(),
+		vformat(
+			"Failed to create underlying Jolt body for '%s'. "
+			"Consider increasing maximum number of bodies in project settings. "
+			"Maximum number of bodies is currently set to %d.",
+			p_object.to_string(),
+			JoltProjectSettings::get_max_bodies()
+		)
+	);
+
+	bodies_added_since_optimizing += 1;
+
+	return body_id;
+}
+
+void JoltSpace3D::remove_body(const JPH::BodyID& p_body_id) {
+	JPH::BodyInterface& body_iface = get_body_iface();
+
+	body_iface.RemoveBody(p_body_id);
+	body_iface.DestroyBody(p_body_id);
+}
+
+void JoltSpace3D::try_optimize() {
+	// HACK(mihe): This makes assumptions about the underlying acceleration structure of Jolt's
+	// broad-phase, which currently uses a quadtree, and which gets walked with a fixed-size node
+	// stack of 128. This means that when the quadtree is completely unbalanced, as is the case if
+	// we add bodies one-by-one without ever stepping the simulation, like in the editor viewport,
+	// we would exceed this stack size (resulting in an incomplete search) as soon as we perform a
+	// physics query after having added somewhere in the order of 128 * 3 bodies. We leave a hefty
+	// margin just in case.
+
+	if (likely(bodies_added_since_optimizing < 128)) {
+		return;
+	}
+
+	physics_system->OptimizeBroadPhase();
+
+	bodies_added_since_optimizing = 0;
+}
+
 void JoltSpace3D::add_joint(JPH::Constraint* p_jolt_ref) {
 	physics_system->AddConstraint(p_jolt_ref);
 }
@@ -411,8 +495,18 @@ void JoltSpace3D::dump_debug_snapshot(const String& p_dir) {
 	JPH::PhysicsScene physics_scene;
 	physics_scene.FromPhysicsSystem(physics_system);
 
-	for (JPH::BodyCreationSettings& body : physics_scene.GetBodies()) {
-		body.SetShape(JoltShapeImpl3D::without_custom_shapes(body.GetShape()));
+	for (JPH::BodyCreationSettings& settings : physics_scene.GetBodies()) {
+		const auto* object = reinterpret_cast<const JoltObjectImpl3D*>(settings.mUserData);
+
+		if (const JoltBodyImpl3D* body = object->as_body()) {
+			// HACK(mihe): Since we do our own integration of gravity and damping, while leaving
+			// Jolt's own values at zero, we need to transfer over the correct values.
+			settings.mGravityFactor = body->get_gravity_scale();
+			settings.mLinearDamping = body->get_total_linear_damp();
+			settings.mAngularDamping = body->get_total_angular_damp();
+		}
+
+		settings.SetShape(JoltShapeImpl3D::without_custom_shapes(settings.GetShape()));
 	}
 
 	JoltStreamOutWrapper output_stream(file_access);

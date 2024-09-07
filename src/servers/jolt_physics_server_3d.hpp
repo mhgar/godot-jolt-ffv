@@ -9,7 +9,7 @@ class JoltSoftBodyImpl3D;
 class JoltSpace3D;
 
 class JoltPhysicsServer3D final : public PhysicsServer3DExtension {
-	GDCLASS_NO_WARN(JoltPhysicsServer3D, PhysicsServer3DExtension)
+	GDCLASS_QUIET(JoltPhysicsServer3D, PhysicsServer3DExtension)
 
 public:
 	enum HingeJointParamJolt {
@@ -51,15 +51,6 @@ public:
 	};
 
 	enum G6DOFJointAxisParamJolt {
-		G6DOF_JOINT_LINEAR_SPRING_STIFFNESS = 7,
-		G6DOF_JOINT_LINEAR_SPRING_DAMPING = 8,
-		G6DOF_JOINT_LINEAR_SPRING_EQUILIBRIUM_POINT = 9,
-		G6DOF_JOINT_ANGULAR_SPRING_STIFFNESS = 19,
-		G6DOF_JOINT_ANGULAR_SPRING_DAMPING = 20,
-		G6DOF_JOINT_ANGULAR_SPRING_EQUILIBRIUM_POINT = 21,
-
-		// HACK(mihe): Any parameters before this point are ones that were missing from the bindings
-
 		G6DOF_JOINT_LINEAR_SPRING_FREQUENCY = 100,
 		G6DOF_JOINT_LINEAR_LIMIT_SPRING_FREQUENCY,
 		G6DOF_JOINT_LINEAR_LIMIT_SPRING_DAMPING,
@@ -67,14 +58,9 @@ public:
 	};
 
 	enum G6DOFJointAxisFlagJolt {
-		G6DOF_JOINT_FLAG_ENABLE_ANGULAR_SPRING = 2,
-		G6DOF_JOINT_FLAG_ENABLE_LINEAR_SPRING = 3,
-
-		// HACK(mihe): Any flags before this point are ones that were missing from the bindings
-
 		G6DOF_JOINT_FLAG_ENABLE_LINEAR_LIMIT_SPRING = 100,
 		G6DOF_JOINT_FLAG_ENABLE_LINEAR_SPRING_FREQUENCY,
-		G6DOF_JOINT_FLAG_ENABLE_ANGULAR_SPRING_FREQUENCY,
+		G6DOF_JOINT_FLAG_ENABLE_ANGULAR_SPRING_FREQUENCY
 	};
 
 private:
@@ -84,6 +70,8 @@ public:
 	JoltPhysicsServer3D();
 
 	~JoltPhysicsServer3D() override;
+
+	static JoltPhysicsServer3D* get_singleton();
 
 	RID _world_boundary_shape_create() override;
 
@@ -615,6 +603,8 @@ public:
 	bool _is_flushing_queries() const override;
 
 	int32_t _get_process_info(PhysicsServer3D::ProcessInfo p_process_info) override;
+
+	bool is_active() const { return active; }
 
 	void free_space(JoltSpace3D* p_space);
 

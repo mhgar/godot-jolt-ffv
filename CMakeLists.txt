@@ -125,6 +125,7 @@ set(target_sse2 $<STREQUAL:${GDJ_X86_INSTRUCTION_SET},SSE2>)
 set(is_msvc_like $<BOOL:${MSVC}>)
 set(is_msvc_cl $<CXX_COMPILER_ID:MSVC>)
 set(is_llvm_clang $<CXX_COMPILER_ID:Clang>)
+set(is_apple_clang $<CXX_COMPILER_ID:AppleClang>)
 set(is_gcc $<CXX_COMPILER_ID:GNU>)
 set(is_clang_cl $<AND:${is_msvc_like},${is_llvm_clang}>)
 
@@ -265,6 +266,7 @@ else()
 		PRIVATE $<${is_gcc}:-no-integrated-cpp> # Workaround for GCC ignoring _Pragma (GCC#53431)
 		PRIVATE $<${deterministic}:-ffp-contract=off> # Disable floating-point contractions
 		PRIVATE $<${not_deterministic}:-ffast-math> # Enable aggressive floating-point optimizations
+		PRIVATE $<${is_apple_clang}:-faligned-allocation> # Silence non-aligned allocation errors
 	)
 
 	if(APPLE)
@@ -352,6 +354,8 @@ else() # ANDROID/UNIX
 	set(debug_symbols ${debug_file})
 endif()
 
+gdj_generate_gdextension_file(gdextension_file)
+
 set(addon_dir addons/godot-jolt)
 
 string(CONCAT addon_platform_dir
@@ -365,7 +369,7 @@ string(CONCAT addon_platform_dir
 
 install(
 	FILES
-		godot-jolt.gdextension
+		${gdextension_file}
 		LICENSE.txt
 		THIRDPARTY.txt
 	DESTINATION ${addon_dir}

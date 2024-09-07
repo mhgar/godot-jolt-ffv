@@ -137,9 +137,9 @@ JoltDebugGeometry3D::~JoltDebugGeometry3D() = default;
 
 void JoltDebugGeometry3D::_process([[maybe_unused]] double p_delta) {
 #ifdef JPH_DEBUG_RENDERER
-	auto* physics_server = dynamic_cast<JoltPhysicsServer3D*>(PhysicsServer3D::get_singleton());
+	JoltPhysicsServer3D* physics_server = JoltPhysicsServer3D::get_singleton();
 
-	if (physics_server == nullptr) {
+	if (unlikely(physics_server == nullptr)) {
 		ERR_PRINT_ONCE(
 			"JoltDebugGeometry3D was unable to retrieve the Jolt-based physics server. Make sure "
 			"that you have set 'JoltPhysics3D' as the currently active physics server in your "
@@ -413,6 +413,8 @@ void JoltDebugGeometry3D::set_material_depth_test([[maybe_unused]] bool p_enable
 #endif // JPH_DEBUG_RENDERER
 }
 
+#ifdef JPH_DEBUG_RENDERER
+
 static_assert(
 	(int32_t)JoltDebugGeometry3D::COLOR_SCHEME_INSTANCE ==
 	(int32_t)JPH::BodyManager::EShapeColor::InstanceColor
@@ -437,3 +439,5 @@ static_assert(
 	(int32_t)JoltDebugGeometry3D::COLOR_SCHEME_ISLAND ==
 	(int32_t)JPH::BodyManager::EShapeColor::IslandColor
 );
+
+#endif // JPH_DEBUG_RENDERER

@@ -1,7 +1,6 @@
 #include "jolt_height_map_shape_impl_3d.hpp"
 
 #include "servers/jolt_project_settings.hpp"
-#include "shapes/jolt_custom_double_sided_shape.hpp"
 
 Variant JoltHeightMapShapeImpl3D::get_data() const {
 	Dictionary data;
@@ -12,18 +11,17 @@ Variant JoltHeightMapShapeImpl3D::get_data() const {
 }
 
 void JoltHeightMapShapeImpl3D::set_data(const Variant& p_data) {
-	ON_SCOPE_EXIT {
-		_invalidated();
-	};
-
-	destroy();
-
 	ERR_FAIL_COND(p_data.get_type() != Variant::DICTIONARY);
 
 	const Dictionary data = p_data;
 
 	const Variant maybe_heights = data.get("heights", {});
+
+#ifdef REAL_T_IS_DOUBLE
+	ERR_FAIL_COND(maybe_heights.get_type() != Variant::PACKED_FLOAT64_ARRAY);
+#else // REAL_T_IS_DOUBLE
 	ERR_FAIL_COND(maybe_heights.get_type() != Variant::PACKED_FLOAT32_ARRAY);
+#endif // REAL_T_IS_DOUBLE
 
 	const Variant maybe_width = data.get("width", {});
 	ERR_FAIL_COND(maybe_width.get_type() != Variant::INT);
@@ -34,6 +32,8 @@ void JoltHeightMapShapeImpl3D::set_data(const Variant& p_data) {
 	heights = maybe_heights;
 	width = maybe_width;
 	depth = maybe_depth;
+
+	destroy();
 }
 
 String JoltHeightMapShapeImpl3D::to_string() const {
@@ -68,17 +68,17 @@ JPH::ShapeRefC JoltHeightMapShapeImpl3D::_build() const {
 	);
 
 	if (width != depth) {
-		return _build_double_sided(_build_mesh());
+		return JoltShapeImpl3D::with_double_sided(_build_mesh());
 	}
 
 	const int32_t block_size = 2; // Default of JPH::HeightFieldShapeSettings::mBlockSize
 	const int32_t block_count = width / block_size;
 
 	if (block_count < 2) {
-		return _build_double_sided(_build_mesh());
+		return JoltShapeImpl3D::with_double_sided(_build_mesh());
 	}
 
-	return _build_double_sided(_build_height_field());
+	return JoltShapeImpl3D::with_double_sided(_build_height_field());
 }
 
 JPH::ShapeRefC JoltHeightMapShapeImpl3D::_build_height_field() const {
@@ -95,22 +95,22 @@ JPH::ShapeRefC JoltHeightMapShapeImpl3D::_build_height_field() const {
 	LocalVector<float> heights_rev;
 	heights_rev.resize((int32_t)heights.size());
 
-	const float* heights_ptr = heights.ptr();
+	const real_t* heights_ptr = heights.ptr();
 	float* heights_rev_ptr = heights_rev.ptr();
 
 	for (int32_t z = 0; z < depth; ++z) {
 		const int32_t z_rev = (depth - 1) - z;
 
-		const float* row = heights_ptr + ptrdiff_t(z * width);
+		const real_t* row = heights_ptr + ptrdiff_t(z * width);
 		float* row_rev = heights_rev_ptr + ptrdiff_t(z_rev * width);
 
 		for (int32_t x = 0; x < width; ++x) {
-			const float height = row[x];
+			const real_t height = row[x];
 
 			// HACK(mihe): Godot has undocumented (accidental?) support for holes by passing NaN as
 			// the height value, whereas Jolt uses `FLT_MAX` instead, so we translate any NaN to
 			// `FLT_MAX` in order to be drop-in compatible.
-			row_rev[x] = Math::is_nan(height) ? FLT_MAX : height;
+			row_rev[x] = Math::is_nan(height) ? FLT_MAX : (float)height;
 		}
 	}
 
@@ -162,7 +162,7 @@ JPH::ShapeRefC JoltHeightMapShapeImpl3D::_build_mesh() const {
 	for (int32_t z = 0; z < depth; ++z) {
 		for (int32_t x = 0; x < width; ++x) {
 			const float vertex_x = offset_x + (float)x;
-			const float vertex_y = heights[z * width + x];
+			const auto vertex_y = (float)heights[z * width + x];
 			const float vertex_z = offset_z + (float)z;
 
 			vertices.emplace_back(vertex_x, vertex_y, vertex_z);
@@ -213,24 +213,6 @@ JPH::ShapeRefC JoltHeightMapShapeImpl3D::_build_mesh() const {
 			to_string(),
 			to_godot(shape_result.GetError()),
 			_owners_to_string()
-		)
-	);
-
-	return shape_result.Get();
-}
-
-JPH::ShapeRefC JoltHeightMapShapeImpl3D::_build_double_sided(const JPH::Shape* p_shape) const {
-	ERR_FAIL_NULL_D(p_shape);
-
-	const JoltCustomDoubleSidedShapeSettings shape_settings(p_shape);
-	const JPH::ShapeSettings::ShapeResult shape_result = shape_settings.Create();
-
-	ERR_FAIL_COND_D_MSG(
-		shape_result.HasError(),
-		vformat(
-			"Failed to make shape double-sided. "
-			"It returned the following error: '%s'.",
-			to_godot(shape_result.GetError())
 		)
 	);
 

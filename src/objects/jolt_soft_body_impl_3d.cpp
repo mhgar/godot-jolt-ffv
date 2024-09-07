@@ -73,6 +73,31 @@ void JoltSoftBodyImpl3D::set_mesh(const RID& p_mesh) {
 	_mesh_changed();
 }
 
+bool JoltSoftBodyImpl3D::is_sleeping() const {
+	if (space == nullptr) {
+		return false;
+	}
+
+	const JoltReadableBody3D body = space->read_body(jolt_id);
+	ERR_FAIL_COND_D(body.is_invalid());
+
+	return !body->IsActive();
+}
+
+void JoltSoftBodyImpl3D::set_is_sleeping(bool p_enabled) {
+	if (space == nullptr) {
+		return;
+	}
+
+	JPH::BodyInterface& body_iface = space->get_body_iface();
+
+	if (p_enabled) {
+		body_iface.DeactivateBody(jolt_id);
+	} else {
+		body_iface.ActivateBody(jolt_id);
+	}
+}
+
 void JoltSoftBodyImpl3D::set_simulation_precision(int32_t p_precision) {
 	QUIET_FAIL_COND(simulation_precision == p_precision);
 
@@ -102,7 +127,7 @@ void JoltSoftBodyImpl3D::set_pressure(float p_pressure) {
 
 	pressure = MAX(p_pressure, 0.0f);
 
-	_update_pressure();
+	_pressure_changed();
 }
 
 void JoltSoftBodyImpl3D::set_linear_damping(float p_damping) {
@@ -140,7 +165,7 @@ Variant JoltSoftBodyImpl3D::get_state(PhysicsServer3D::BodyState p_state) const 
 			ERR_FAIL_D_NOT_IMPL();
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled body state: '%d'", p_state));
+			ERR_FAIL_D_REPORT(vformat("Unhandled body state: '%d'.", p_state));
 		}
 	}
 }
@@ -163,7 +188,7 @@ void JoltSoftBodyImpl3D::set_state(PhysicsServer3D::BodyState p_state, const Var
 			ERR_FAIL_NOT_IMPL();
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled body state: '%d'", p_state));
+			ERR_FAIL_REPORT(vformat("Unhandled body state: '%d'.", p_state));
 		} break;
 	}
 }
@@ -237,6 +262,8 @@ void JoltSoftBodyImpl3D::update_rendering_server(
 		)
 	);
 
+	ERR_FAIL_NULL(shared);
+
 	const JoltReadableBody3D body = space->read_body(jolt_id);
 	ERR_FAIL_COND(body.is_invalid());
 
@@ -298,6 +325,7 @@ Vector3 JoltSoftBodyImpl3D::get_vertex_position(int32_t p_index) {
 		)
 	);
 
+	ERR_FAIL_NULL_D(shared);
 	ERR_FAIL_INDEX_D(p_index, shared->mesh_to_physics.size());
 	const int32_t physics_index = shared->mesh_to_physics[p_index];
 
@@ -325,6 +353,7 @@ void JoltSoftBodyImpl3D::set_vertex_position(int32_t p_index, const Vector3& p_p
 		)
 	);
 
+	ERR_FAIL_NULL(shared);
 	ERR_FAIL_INDEX(p_index, shared->mesh_to_physics.size());
 	const int32_t physics_index = shared->mesh_to_physics[p_index];
 
@@ -341,7 +370,8 @@ void JoltSoftBodyImpl3D::set_vertex_position(int32_t p_index, const Vector3& p_p
 	JPH::Array<JPH::SoftBodyVertex>& physics_vertices = motion_properties.GetVertices();
 	JPH::SoftBodyVertex& physics_vertex = physics_vertices[(size_t)physics_index];
 
-	const JPH::Vec3 local_position = to_jolt(p_position) - body->GetCenterOfMassPosition();
+	const JPH::RVec3 center_of_mass = body->GetCenterOfMassPosition();
+	const JPH::Vec3 local_position = JPH::Vec3(to_jolt_r(p_position) - center_of_mass);
 	const JPH::Vec3 displacement = local_position - physics_vertex.mPosition;
 	const JPH::Vec3 velocity = displacement / last_step;
 
@@ -377,6 +407,7 @@ bool JoltSoftBodyImpl3D::is_vertex_pinned(int32_t p_index) const {
 		)
 	);
 
+	ERR_FAIL_NULL_D(shared);
 	ERR_FAIL_INDEX_D(p_index, shared->mesh_to_physics.size());
 	const int32_t physics_index = shared->mesh_to_physics[p_index];
 
@@ -443,30 +474,15 @@ void JoltSoftBodyImpl3D::_add_to_space() {
 	jolt_settings->mCollisionGroup = JPH::CollisionGroup(nullptr, group_id, sub_group_id);
 	jolt_settings->mMaxLinearVelocity = JoltProjectSettings::get_max_linear_velocity();
 
-	JPH::BodyInterface& body_iface = space->get_body_iface();
+	const JPH::BodyID new_jolt_id = space->add_soft_body(*this, *jolt_settings);
+	QUIET_FAIL_COND(new_jolt_id.IsInvalid());
 
-	JPH::Body* body = body_iface.CreateSoftBody(*jolt_settings);
-
-	ERR_FAIL_NULL_MSG(
-		body,
-		vformat(
-			"Failed to create Jolt body for '%s'. "
-			"Consider increasing maximum number of bodies in project settings. "
-			"Maximum number of bodies is currently set to %d.",
-			to_string(),
-			JoltProjectSettings::get_max_bodies()
-		)
-	);
-
-	jolt_id = body->GetID();
-
-	body_iface.AddBody(jolt_id, JPH::EActivation::Activate);
+	jolt_id = new_jolt_id;
 }
 
 bool JoltSoftBodyImpl3D::_ref_shared_data() {
 	using SoftBodyVertex = JPH::SoftBodySharedSettings::Vertex;
 	using SoftBodyFace = JPH::SoftBodySharedSettings::Face;
-	using SoftBodyEdge = JPH::SoftBodySharedSettings::Edge;
 
 	auto iter_shared_data = mesh_to_shared.find(mesh);
 
@@ -491,7 +507,6 @@ bool JoltSoftBodyImpl3D::_ref_shared_data() {
 
 		JPH::Array<SoftBodyVertex>& physics_vertices = settings.mVertices;
 		JPH::Array<SoftBodyFace>& physics_faces = settings.mFaces;
-		JPH::Array<SoftBodyEdge>& physics_edges = settings.mEdgeConstraints;
 
 		HashMap<Vector3, int32_t> vertex_to_physics;
 
@@ -519,7 +534,12 @@ bool JoltSoftBodyImpl3D::_ref_shared_data() {
 				auto iter_physics_index = vertex_to_physics.find(vertex);
 
 				if (iter_physics_index == vertex_to_physics.end()) {
-					physics_vertices.emplace_back(JPH::Float3(vertex.x, vertex.y, vertex.z));
+					physics_vertices.emplace_back(
+						JPH::Float3((float)vertex.x, (float)vertex.y, (float)vertex.z),
+						JPH::Float3(0.0f, 0.0f, 0.0f),
+						1.0f
+					);
+
 					iter_physics_index = vertex_to_physics.insert(vertex, physics_index_count++);
 				}
 
@@ -550,33 +570,27 @@ bool JoltSoftBodyImpl3D::_ref_shared_data() {
 			);
 		}
 
+		// Pin the static vertices, this is used during the Optimize call to order the constraints.
+		// Note that it is ok if the pinned vertices change later, this will reduce the
+		// effectiveness of the constraints a bit.
+		for (int32_t pin_mesh_index : pinned_vertices) {
+			ERR_FAIL_INDEX_V(pin_mesh_index, mesh_to_physics.size(), false);
+			const int32_t pin_physics_index = mesh_to_physics[pin_mesh_index];
+			ERR_FAIL_INDEX_V(pin_physics_index, (int32_t)physics_vertices.size(), false);
+
+			physics_vertices[(size_t)pin_physics_index].mInvMass = 0.0f;
+		}
+
 		// HACK(mihe): Since Godot's stiffness is input as a coefficient between 0 and 1, and Jolt
 		// uses actual stiffness for its edge constraints, we crudely map one to the other with an
 		// arbitrary constant.
-		const float stiffness = MAX(Math::pow(stiffness_coefficient, 3.0f) * 1000000.0f, 0.000001f);
+		const float stiffness = MAX(Math::pow(stiffness_coefficient, 3.0f) * 100000.0f, 0.000001f);
 		const float inverse_stiffness = 1.0f / stiffness;
 
-		SymmetricBitTable marked_edges((int32_t)physics_vertices.size());
+		JPH::SoftBodySharedSettings::VertexAttributes vertex_attrib;
+		vertex_attrib.mCompliance = vertex_attrib.mShearCompliance = inverse_stiffness;
 
-		auto try_add_edge = [&](int32_t p_physics_index_a, int32_t p_physics_index_b) {
-			if (!marked_edges.has(p_physics_index_a, p_physics_index_b)) {
-				physics_edges.emplace_back(
-					(JPH::uint32)p_physics_index_a,
-					(JPH::uint32)p_physics_index_b,
-					inverse_stiffness
-				);
-
-				marked_edges.set(p_physics_index_a, p_physics_index_b);
-			}
-		};
-
-		for (SoftBodyFace& face : physics_faces) {
-			try_add_edge((int32_t)face.mVertex[0], (int32_t)face.mVertex[1]);
-			try_add_edge((int32_t)face.mVertex[1], (int32_t)face.mVertex[2]);
-			try_add_edge((int32_t)face.mVertex[2], (int32_t)face.mVertex[0]);
-		}
-
-		settings.CalculateEdgeLengths();
+		settings.CreateConstraints(&vertex_attrib, 1, JPH::SoftBodySharedSettings::EBendType::None);
 		settings.Optimize();
 	} else {
 		iter_shared_data->second.ref_count++;
@@ -603,6 +617,7 @@ void JoltSoftBodyImpl3D::_deref_shared_data() {
 void JoltSoftBodyImpl3D::_update_mass() {
 	QUIET_FAIL_NULL(space);
 	QUIET_FAIL_COND(jolt_id.IsInvalid());
+	QUIET_FAIL_NULL(shared);
 
 	JoltWritableBody3D body = space->write_body(jolt_id);
 	ERR_FAIL_COND(body.is_invalid());
@@ -709,12 +724,19 @@ void JoltSoftBodyImpl3D::_mesh_changed() {
 	_try_rebuild();
 }
 
+void JoltSoftBodyImpl3D::_pressure_changed() {
+	_update_pressure();
+	wake_up();
+}
+
 void JoltSoftBodyImpl3D::_damping_changed() {
 	_update_damping();
+	wake_up();
 }
 
 void JoltSoftBodyImpl3D::_pins_changed() {
 	_update_mass();
+	wake_up();
 }
 
 void JoltSoftBodyImpl3D::_exceptions_changed() {

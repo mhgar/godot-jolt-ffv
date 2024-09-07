@@ -50,7 +50,7 @@ double JoltPinJointImpl3D::get_param(PhysicsServer3D::PinJointParam p_param) con
 			return DEFAULT_IMPULSE_CLAMP;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled pin joint parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled pin joint parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -88,7 +88,7 @@ void JoltPinJointImpl3D::set_param(PhysicsServer3D::PinJointParam p_param, doubl
 			}
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled pin joint parameter: '%d'", p_param));
+			ERR_FAIL_REPORT(vformat("Unhandled pin joint parameter: '%d'.", p_param));
 		} break;
 	}
 }
@@ -147,8 +147,8 @@ JPH::Constraint* JoltPinJointImpl3D::_build_pin(
 ) {
 	JPH::PointConstraintSettings constraint_settings;
 	constraint_settings.mSpace = JPH::EConstraintSpace::LocalToBodyCOM;
-	constraint_settings.mPoint1 = to_jolt(p_shifted_ref_a.origin);
-	constraint_settings.mPoint2 = to_jolt(p_shifted_ref_b.origin);
+	constraint_settings.mPoint1 = to_jolt_r(p_shifted_ref_a.origin);
+	constraint_settings.mPoint2 = to_jolt_r(p_shifted_ref_b.origin);
 
 	if (p_jolt_body_a == nullptr) {
 		return constraint_settings.Create(JPH::Body::sFixedToWorld, *p_jolt_body_b);
@@ -161,4 +161,5 @@ JPH::Constraint* JoltPinJointImpl3D::_build_pin(
 
 void JoltPinJointImpl3D::_points_changed() {
 	rebuild();
+	_wake_up_bodies();
 }

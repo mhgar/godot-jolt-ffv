@@ -34,7 +34,7 @@ bool integrate(TValue& p_value, PhysicsServer3D::AreaSpaceOverrideMode p_mode, T
 			return false;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled override mode: '%d'", p_mode));
+			ERR_FAIL_D_REPORT(vformat("Unhandled override mode: '%d'.", p_mode));
 		}
 	}
 }
@@ -48,9 +48,14 @@ JoltBodyImpl3D::~JoltBodyImpl3D() {
 	memdelete_safely(direct_state);
 }
 
-void JoltBodyImpl3D::set_transform(const Transform3D& p_transform) {
+void JoltBodyImpl3D::set_transform(Transform3D p_transform) {
+	ENSURE_SCALE_NOT_ZERO(
+		p_transform,
+		vformat("An invalid transform was passed to physics body '%s'.", to_string())
+	);
+
 	Vector3 new_scale;
-	const Transform3D new_transform = Math::decomposed(p_transform, new_scale);
+	Math::decompose(p_transform, new_scale);
 
 	if (!scale.is_equal_approx(new_scale)) {
 		scale = new_scale;
@@ -58,15 +63,15 @@ void JoltBodyImpl3D::set_transform(const Transform3D& p_transform) {
 	}
 
 	if (space == nullptr) {
-		jolt_settings->mPosition = to_jolt(new_transform.origin);
-		jolt_settings->mRotation = to_jolt(new_transform.basis);
+		jolt_settings->mPosition = to_jolt_r(p_transform.origin);
+		jolt_settings->mRotation = to_jolt(p_transform.basis);
 	} else if (is_kinematic()) {
 		kinematic_transform = p_transform;
 	} else {
 		space->get_body_iface().SetPositionAndRotation(
 			jolt_id,
-			to_jolt(new_transform.origin),
-			to_jolt(new_transform.basis),
+			to_jolt_r(p_transform.origin),
+			to_jolt(p_transform.basis),
 			JPH::EActivation::DontActivate
 		);
 	}
@@ -92,7 +97,7 @@ Variant JoltBodyImpl3D::get_state(PhysicsServer3D::BodyState p_state) const {
 			return can_sleep();
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled body state: '%d'", p_state));
+			ERR_FAIL_D_REPORT(vformat("Unhandled body state: '%d'.", p_state));
 		}
 	}
 }
@@ -115,7 +120,7 @@ void JoltBodyImpl3D::set_state(PhysicsServer3D::BodyState p_state, const Variant
 			set_can_sleep(p_value);
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled body state: '%d'", p_state));
+			ERR_FAIL_REPORT(vformat("Unhandled body state: '%d'.", p_state));
 		} break;
 	}
 }
@@ -153,7 +158,7 @@ Variant JoltBodyImpl3D::get_param(PhysicsServer3D::BodyParameter p_param) const 
 			return get_angular_damp();
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled body parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled body parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -191,7 +196,7 @@ void JoltBodyImpl3D::set_param(PhysicsServer3D::BodyParameter p_param, const Var
 			set_angular_damp(p_value);
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled body parameter: '%d'", p_param));
+			ERR_FAIL_REPORT(vformat("Unhandled body parameter: '%d'.", p_param));
 		} break;
 	}
 }
@@ -216,16 +221,6 @@ void JoltBodyImpl3D::set_custom_integrator(bool p_enabled) {
 
 	body->ResetForce();
 	body->ResetTorque();
-
-	JPH::MotionProperties& motion_properties = *body->GetMotionPropertiesUnchecked();
-
-	if (custom_integrator) {
-		motion_properties.SetLinearDamping(0.0f);
-		motion_properties.SetAngularDamping(0.0f);
-	} else {
-		motion_properties.SetLinearDamping(total_linear_damp);
-		motion_properties.SetAngularDamping(total_angular_damp);
-	}
 }
 
 bool JoltBodyImpl3D::is_sleeping() const {
@@ -299,13 +294,7 @@ Basis JoltBodyImpl3D::get_principal_inertia_axes() const {
 	const JoltReadableBody3D body = space->read_body(jolt_id);
 	ERR_FAIL_COND_D(body.is_invalid());
 
-	// TODO(mihe): See if there's some way of getting this directly from Jolt
-
-	Basis inertia_tensor = to_godot(jolt_shape->GetMassProperties().mInertia).basis;
-	const Basis principal_inertia_axes_local = inertia_tensor.diagonalize().transposed();
-	const Basis principal_inertia_axes = get_basis() * principal_inertia_axes_local;
-
-	return principal_inertia_axes;
+	return to_godot(body->GetRotation() * body->GetMotionProperties()->GetInertiaRotation());
 }
 
 Vector3 JoltBodyImpl3D::get_inverse_inertia() const {
@@ -326,7 +315,9 @@ Vector3 JoltBodyImpl3D::get_inverse_inertia() const {
 	const JoltReadableBody3D body = space->read_body(jolt_id);
 	ERR_FAIL_COND_D(body.is_invalid());
 
-	return to_godot(body->GetMotionPropertiesUnchecked()->GetInverseInertiaDiagonal());
+	const JPH::MotionProperties& motion_properties = *body->GetMotionPropertiesUnchecked();
+
+	return to_godot(motion_properties.GetLocalSpaceInverseInertia().GetDiagonal3());
 }
 
 Basis JoltBodyImpl3D::get_inverse_inertia_tensor() const {
@@ -381,18 +372,15 @@ void JoltBodyImpl3D::set_angular_velocity(const Vector3& p_velocity) {
 		return;
 	}
 
-	// We need to clear locked angular axes since Jolt currently only clears linear axes
-	const Vector3 locked_velocity = _stop_locked_angular_axes(p_velocity);
-
 	if (space == nullptr) {
-		jolt_settings->mAngularVelocity = to_jolt(locked_velocity);
+		jolt_settings->mAngularVelocity = to_jolt(p_velocity);
 		return;
 	}
 
 	const JoltWritableBody3D body = space->write_body(jolt_id);
 	ERR_FAIL_COND(body.is_invalid());
 
-	body->GetMotionPropertiesUnchecked()->SetAngularVelocityClamped(to_jolt(locked_velocity));
+	body->GetMotionPropertiesUnchecked()->SetAngularVelocityClamped(to_jolt(p_velocity));
 }
 
 void JoltBodyImpl3D::set_axis_velocity(const Vector3& p_axis_velocity) {
@@ -419,15 +407,9 @@ void JoltBodyImpl3D::set_axis_velocity(const Vector3& p_axis_velocity) {
 }
 
 Vector3 JoltBodyImpl3D::get_velocity_at_position(const Vector3& p_position) const {
-	ERR_FAIL_NULL_D_MSG(
-		space,
-		vformat(
-			"Failed to retrieve point velocity for '%s'. "
-			"Doing so without a physics space is not supported by Godot Jolt. "
-			"If this relates to a node, try adding the node to a scene tree first.",
-			to_string()
-		)
-	);
+	if (space == nullptr) {
+		return {};
+	}
 
 	const JoltReadableBody3D body = space->read_body(jolt_id);
 	ERR_FAIL_COND_D(body.is_invalid());
@@ -457,9 +439,8 @@ void JoltBodyImpl3D::set_center_of_mass_custom(const Vector3& p_center_of_mass) 
 }
 
 void JoltBodyImpl3D::set_max_contacts_reported(int32_t p_count) {
-	if (contacts.size() == p_count) {
-		return;
-	}
+	ERR_FAIL_COND(p_count < 0);
+	QUIET_FAIL_COND(contacts.size() == p_count);
 
 	ON_SCOPE_EXIT {
 		_contact_reporting_changed();
@@ -567,17 +548,7 @@ void JoltBodyImpl3D::apply_force(const Vector3& p_force, const Vector3& p_positi
 	const JoltWritableBody3D body = space->write_body(jolt_id);
 	ERR_FAIL_COND(body.is_invalid());
 
-	// We need to manually apply any induced torque despite there being an overload of `AddForce`
-	// that does this for us, since Jolt doesn't currently clear locked angular axes.
-
-	const Vector3 body_pos = to_godot(body->GetPosition());
-	const Vector3 body_com = to_godot(body->GetCenterOfMassPosition());
-	const Vector3 torque = (body_pos + p_position - body_com).cross(p_force);
-
-	const Vector3 locked_torque = _stop_locked_angular_axes(torque);
-
-	body->AddForce(to_jolt(p_force));
-	body->AddTorque(to_jolt(locked_torque));
+	body->AddForce(to_jolt(p_force), body->GetPosition() + to_jolt(p_position));
 
 	_motion_changed();
 }
@@ -629,8 +600,6 @@ void JoltBodyImpl3D::apply_impulse(const Vector3& p_impulse, const Vector3& p_po
 
 	body->AddImpulse(to_jolt(p_impulse), body->GetPosition() + to_jolt(p_position));
 
-	_stop_locked_axes(*body);
-
 	_motion_changed();
 }
 
@@ -655,8 +624,6 @@ void JoltBodyImpl3D::apply_central_impulse(const Vector3& p_impulse) {
 	ERR_FAIL_COND(body.is_invalid());
 
 	body->AddImpulse(to_jolt(p_impulse));
-
-	_stop_locked_axes(*body);
 
 	_motion_changed();
 }
@@ -860,7 +827,7 @@ void JoltBodyImpl3D::call_queries([[maybe_unused]] JPH::Body& p_jolt_body) {
 		}
 	}
 
-	if (body_state_callback.is_valid()) {
+	if (state_sync_callback.is_valid()) {
 		static thread_local Array arguments = []() {
 			Array array;
 			array.resize(1);
@@ -869,7 +836,7 @@ void JoltBodyImpl3D::call_queries([[maybe_unused]] JPH::Body& p_jolt_body) {
 
 		arguments[0] = get_direct_state();
 
-		body_state_callback.callv(arguments);
+		state_sync_callback.callv(arguments);
 	}
 
 	sync_state = false;
@@ -892,27 +859,6 @@ void JoltBodyImpl3D::pre_step(float p_step, JPH::Body& p_jolt_body) {
 	}
 
 	contact_count = 0;
-}
-
-void JoltBodyImpl3D::move_kinematic(float p_step, JPH::Body& p_jolt_body) {
-	p_jolt_body.SetLinearVelocity(JPH::Vec3::sZero());
-	p_jolt_body.SetAngularVelocity(JPH::Vec3::sZero());
-
-	const JPH::Vec3 current_position = p_jolt_body.GetPosition();
-	const JPH::Quat current_rotation = p_jolt_body.GetRotation();
-
-	const JPH::Vec3 new_position = to_jolt(kinematic_transform.origin);
-	const JPH::Quat new_rotation = to_jolt(kinematic_transform.basis);
-
-	if (new_position == current_position && new_rotation == current_rotation) {
-		return;
-	}
-
-	p_jolt_body.MoveKinematic(new_position, new_rotation, p_step);
-
-	_stop_locked_axes(p_jolt_body);
-
-	sync_state = true;
 }
 
 JoltPhysicsDirectBodyState3D* JoltBodyImpl3D::get_direct_state() {
@@ -1141,7 +1087,7 @@ JPH::BroadPhaseLayer JoltBodyImpl3D::_get_broad_phase_layer() const {
 			return JoltBroadPhaseLayer::BODY_DYNAMIC;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled body mode: '%d'", mode));
+			ERR_FAIL_D_REPORT(vformat("Unhandled body mode: '%d'.", mode));
 		}
 	}
 }
@@ -1165,7 +1111,7 @@ JPH::EMotionType JoltBodyImpl3D::_get_motion_type() const {
 			return JPH::EMotionType::Dynamic;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled body mode: '%d'", mode));
+			ERR_FAIL_D_REPORT(vformat("Unhandled body mode: '%d'.", mode));
 		}
 	}
 }
@@ -1185,9 +1131,12 @@ void JoltBodyImpl3D::_add_to_space() {
 	jolt_settings->mObjectLayer = _get_object_layer();
 	jolt_settings->mCollisionGroup = JPH::CollisionGroup(nullptr, group_id, sub_group_id);
 	jolt_settings->mMotionType = _get_motion_type();
+	jolt_settings->mAllowedDOFs = _calculate_allowed_dofs();
 	jolt_settings->mAllowDynamicOrKinematic = true;
 	jolt_settings->mCollideKinematicVsNonDynamic = reports_all_kinematic_contacts();
 	jolt_settings->mUseManifoldReduction = !reports_contacts();
+	jolt_settings->mLinearDamping = 0.0f;
+	jolt_settings->mAngularDamping = 0.0f;
 	jolt_settings->mMaxLinearVelocity = JoltProjectSettings::get_max_linear_velocity();
 	jolt_settings->mMaxAngularVelocity = JoltProjectSettings::get_max_angular_velocity();
 
@@ -1195,35 +1144,15 @@ void JoltBodyImpl3D::_add_to_space() {
 		jolt_settings->mEnhancedInternalEdgeRemoval = true;
 	}
 
-	// HACK(mihe): We need to defer the setting of mass properties, to allow for modifying the
-	// inverse inertia for the axis-locking, which we can't do until the body is created, so we set
-	// it to some random values and calculate it properly once the body is created instead.
 	jolt_settings->mOverrideMassProperties = JPH::EOverrideMassProperties::MassAndInertiaProvided;
-	jolt_settings->mMassPropertiesOverride.mMass = 1.0f;
-	jolt_settings->mMassPropertiesOverride.mInertia = JPH::Mat44::sIdentity();
+	jolt_settings->mMassPropertiesOverride = _calculate_mass_properties();
 
 	jolt_settings->SetShape(jolt_shape);
 
-	JPH::BodyInterface& body_iface = space->get_body_iface();
-	JPH::Body* body = body_iface.CreateBody(*jolt_settings);
+	const JPH::BodyID new_jolt_id = space->add_rigid_body(*this, *jolt_settings);
+	QUIET_FAIL_COND(new_jolt_id.IsInvalid());
 
-	ERR_FAIL_NULL_MSG(
-		body,
-		vformat(
-			"Failed to create underlying Jolt body for '%s'. "
-			"Consider increasing maximum number of bodies in project settings. "
-			"Maximum number of bodies is currently set to %d.",
-			to_string(),
-			JoltProjectSettings::get_max_bodies()
-		)
-	);
-
-	jolt_id = body->GetID();
-
-	// HACK(mihe): Since `BODY_STATE_TRANSFORM` will be set right after creation it's more or less
-	// impossible to have a body be sleeping when created, so we default to always starting out as
-	// awake/active.
-	body_iface.AddBody(jolt_id, JPH::EActivation::Activate);
+	jolt_id = new_jolt_id;
 }
 
 void JoltBodyImpl3D::_integrate_forces(float p_step, JPH::Body& p_jolt_body) {
@@ -1234,18 +1163,47 @@ void JoltBodyImpl3D::_integrate_forces(float p_step, JPH::Body& p_jolt_body) {
 	_update_gravity(p_jolt_body);
 
 	if (!custom_integrator) {
-		// We need to clear locked angular axes since Jolt currently only clears linear axes
-		const Vector3 locked_constant_torque = _stop_locked_angular_axes(constant_torque);
-
 		JPH::MotionProperties& motion_properties = *p_jolt_body.GetMotionPropertiesUnchecked();
 
-		motion_properties.SetLinearVelocityClamped(
-			motion_properties.GetLinearVelocity() + to_jolt(gravity) * p_step
-		);
+		JPH::Vec3 linear_velocity = motion_properties.GetLinearVelocity();
+		JPH::Vec3 angular_velocity = motion_properties.GetAngularVelocity();
+
+		// HACK(mihe): Jolt applies damping differently from Godot Physics, where Godot Physics
+		// applies damping before integrating forces whereas Jolt does it after integrating forces.
+		// The way Godot Physics does it seems to yield more consistent results across different
+		// update frequencies when using high (>1) damping values, so we apply the damping ourselves
+		// instead, before any force integration happens.
+
+		linear_velocity *= MAX(1.0f - total_linear_damp * p_step, 0.0f);
+		angular_velocity *= MAX(1.0f - total_angular_damp * p_step, 0.0f);
+
+		linear_velocity += to_jolt(gravity) * p_step;
+
+		motion_properties.SetLinearVelocityClamped(linear_velocity);
+		motion_properties.SetAngularVelocityClamped(angular_velocity);
 
 		p_jolt_body.AddForce(to_jolt(constant_force));
-		p_jolt_body.AddTorque(to_jolt(locked_constant_torque));
+		p_jolt_body.AddTorque(to_jolt(constant_torque));
 	}
+
+	sync_state = true;
+}
+
+void JoltBodyImpl3D::_move_kinematic(float p_step, JPH::Body& p_jolt_body) {
+	p_jolt_body.SetLinearVelocity(JPH::Vec3::sZero());
+	p_jolt_body.SetAngularVelocity(JPH::Vec3::sZero());
+
+	const JPH::RVec3 current_position = p_jolt_body.GetPosition();
+	const JPH::Quat current_rotation = p_jolt_body.GetRotation();
+
+	const JPH::RVec3 new_position = to_jolt_r(kinematic_transform.origin);
+	const JPH::Quat new_rotation = to_jolt(kinematic_transform.basis);
+
+	if (new_position == current_position && new_rotation == current_rotation) {
+		return;
+	}
+
+	p_jolt_body.MoveKinematic(new_position, new_rotation, p_step);
 
 	sync_state = true;
 }
@@ -1264,7 +1222,7 @@ void JoltBodyImpl3D::_pre_step_rigid(float p_step, JPH::Body& p_jolt_body) {
 void JoltBodyImpl3D::_pre_step_kinematic(float p_step, JPH::Body& p_jolt_body) {
 	_update_gravity(p_jolt_body);
 
-	move_kinematic(p_step, p_jolt_body);
+	_move_kinematic(p_step, p_jolt_body);
 
 	if (reports_contacts()) {
 		// HACK(mihe): This seems to emulate the behavior of Godot Physics, where kinematic bodies
@@ -1275,7 +1233,7 @@ void JoltBodyImpl3D::_pre_step_kinematic(float p_step, JPH::Body& p_jolt_body) {
 }
 
 JPH::EAllowedDOFs JoltBodyImpl3D::_calculate_allowed_dofs() const {
-	if (is_static() || is_kinematic()) {
+	if (is_static()) {
 		return JPH::EAllowedDOFs::All;
 	}
 
@@ -1332,9 +1290,18 @@ JPH::MassProperties JoltBodyImpl3D::_calculate_mass_properties(const JPH::Shape&
 		mass_properties.ScaleToMass(mass);
 	} else {
 		mass_properties.mMass = mass;
-		mass_properties.mInertia(0, 0) = inertia.x;
-		mass_properties.mInertia(1, 1) = inertia.y;
-		mass_properties.mInertia(2, 2) = inertia.z;
+	}
+
+	if (inertia.x > 0) {
+		mass_properties.mInertia(0, 0) = (float)inertia.x;
+	}
+
+	if (inertia.y > 0) {
+		mass_properties.mInertia(1, 1) = (float)inertia.y;
+	}
+
+	if (inertia.z > 0) {
+		mass_properties.mInertia(2, 2) = (float)inertia.z;
 	}
 
 	mass_properties.mInertia(3, 3) = 1.0f;
@@ -1346,51 +1313,6 @@ JPH::MassProperties JoltBodyImpl3D::_calculate_mass_properties() const {
 	return _calculate_mass_properties(*jolt_shape);
 }
 
-Vector3 JoltBodyImpl3D::_stop_locked_linear_axes(Vector3 p_vector) const {
-	if (is_axis_locked(PhysicsServer3D::BODY_AXIS_LINEAR_X)) {
-		p_vector.x = 0.0f;
-	}
-
-	if (is_axis_locked(PhysicsServer3D::BODY_AXIS_LINEAR_Y)) {
-		p_vector.y = 0.0f;
-	}
-
-	if (is_axis_locked(PhysicsServer3D::BODY_AXIS_LINEAR_Z)) {
-		p_vector.z = 0.0f;
-	}
-
-	return p_vector;
-}
-
-Vector3 JoltBodyImpl3D::_stop_locked_angular_axes(Vector3 p_vector) const {
-	if (is_axis_locked(PhysicsServer3D::BODY_AXIS_ANGULAR_X) || is_rigid_linear()) {
-		p_vector.x = 0.0f;
-	}
-
-	if (is_axis_locked(PhysicsServer3D::BODY_AXIS_ANGULAR_Y) || is_rigid_linear()) {
-		p_vector.y = 0.0f;
-	}
-
-	if (is_axis_locked(PhysicsServer3D::BODY_AXIS_ANGULAR_Z) || is_rigid_linear()) {
-		p_vector.z = 0.0f;
-	}
-
-	return p_vector;
-}
-
-void JoltBodyImpl3D::_stop_locked_axes(JPH::Body& p_jolt_body) const {
-	JPH::MotionProperties& motion_properties = *p_jolt_body.GetMotionPropertiesUnchecked();
-
-	const Vector3 linear_velocity = to_godot(motion_properties.GetLinearVelocity());
-	const Vector3 angular_velocity = to_godot(motion_properties.GetAngularVelocity());
-
-	const Vector3 locked_linear_velocity = _stop_locked_linear_axes(linear_velocity);
-	const Vector3 locked_angular_velocity = _stop_locked_angular_axes(angular_velocity);
-
-	motion_properties.SetLinearVelocity(to_jolt(locked_linear_velocity));
-	motion_properties.SetAngularVelocity(to_jolt(locked_angular_velocity));
-}
-
 void JoltBodyImpl3D::_update_mass_properties() {
 	if (space == nullptr) {
 		return;
@@ -1399,43 +1321,10 @@ void JoltBodyImpl3D::_update_mass_properties() {
 	const JoltWritableBody3D body = space->write_body(jolt_id);
 	ERR_FAIL_COND(body.is_invalid());
 
-	JPH::MotionProperties& motion_properties = *body->GetMotionPropertiesUnchecked();
-
-	const JPH::EAllowedDOFs allowed_dofs = _calculate_allowed_dofs();
-	JPH::MassProperties mass_properties = _calculate_mass_properties();
-
-	if (allowed_dofs != JPH::EAllowedDOFs::All) {
-		// HACK(mihe): We need to take the inertia into global space in order for any locked angular
-		// axes to actually be applied in global space. We then bring it back into local space once
-		// we've called `SetMassProperties`.
-
-		const JPH::Mat44& inertia_local = mass_properties.mInertia;
-		const JPH::Mat44 rotation_global = JPH::Mat44::sRotation(body->GetRotation());
-		const JPH::Mat44 rotation_global_inv = rotation_global.Transposed();
-		const JPH::Mat44 inertia_global = inertia_local.Multiply3x3(rotation_global_inv);
-		const JPH::Mat44 inertia_global_rotated = rotation_global.Multiply3x3(inertia_global);
-
-		mass_properties.mInertia = inertia_global_rotated;
-	}
-
-	motion_properties.SetMassProperties(allowed_dofs, mass_properties);
-
-	if (allowed_dofs != JPH::EAllowedDOFs::All) {
-		// HACK(mihe): We need to take the inertia back into local space since it's still in global
-		// space after our transformations above.
-
-		const JPH::Vec3 inertia_diagonal = motion_properties.GetInverseInertiaDiagonal();
-		const JPH::Quat inertia_rotation_global = motion_properties.GetInertiaRotation();
-		const JPH::Quat rotation_global_inv = body->GetRotation().Conjugated();
-		const JPH::Quat inertia_rotation_local = rotation_global_inv * inertia_rotation_global;
-
-		motion_properties.SetInverseInertia(inertia_diagonal, inertia_rotation_local);
-
-		// HACK(mihe): Because Jolt doesn't reset the velocities when first omitting the angular
-		// degrees-of-freedom we do it ourselves instead.
-
-		_stop_locked_axes(*body);
-	}
+	body->GetMotionPropertiesUnchecked()->SetMassProperties(
+		_calculate_allowed_dofs(),
+		_calculate_mass_properties()
+	);
 }
 
 void JoltBodyImpl3D::_update_gravity(JPH::Body& p_jolt_body) {
@@ -1519,16 +1408,6 @@ void JoltBodyImpl3D::_update_damp() {
 		} break;
 	}
 
-	const JoltWritableBody3D jolt_body = space->write_body(jolt_id);
-	ERR_FAIL_COND(jolt_body.is_invalid());
-
-	if (!custom_integrator) {
-		JPH::MotionProperties& motion_properties = *jolt_body->GetMotionPropertiesUnchecked();
-
-		motion_properties.SetLinearDamping(total_linear_damp);
-		motion_properties.SetAngularDamping(total_angular_damp);
-	}
-
 	_motion_changed();
 }
 
@@ -1561,6 +1440,14 @@ void JoltBodyImpl3D::_destroy_joint_constraints() {
 	for (JoltJointImpl3D* joint : joints) {
 		joint->destroy();
 	}
+}
+
+void JoltBodyImpl3D::_exit_all_areas() {
+	for (JoltAreaImpl3D* area : areas) {
+		area->body_exited(jolt_id, false);
+	}
+
+	areas.clear();
 }
 
 void JoltBodyImpl3D::_update_group_filter() {
@@ -1596,13 +1483,13 @@ void JoltBodyImpl3D::_space_changing() {
 	JoltShapedObjectImpl3D::_space_changing();
 
 	_destroy_joint_constraints();
+	_exit_all_areas();
 }
 
 void JoltBodyImpl3D::_space_changed() {
 	JoltShapedObjectImpl3D::_space_changed();
 
 	_update_kinematic_transform();
-	_update_mass_properties();
 	_update_group_filter();
 	_update_joint_constraints();
 	_areas_changed();

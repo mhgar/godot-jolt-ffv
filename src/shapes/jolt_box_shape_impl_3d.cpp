@@ -13,25 +13,23 @@ Variant JoltBoxShapeImpl3D::get_data() const {
 }
 
 void JoltBoxShapeImpl3D::set_data(const Variant& p_data) {
-	ON_SCOPE_EXIT {
-		_invalidated();
-	};
-
-	destroy();
-
 	ERR_FAIL_COND(p_data.get_type() != Variant::VECTOR3);
 
-	half_extents = p_data;
+	const Vector3 new_half_extents = p_data;
+	QUIET_FAIL_COND(new_half_extents == half_extents);
+
+	half_extents = new_half_extents;
+
+	destroy();
 }
 
 void JoltBoxShapeImpl3D::set_margin(float p_margin) {
-	ON_SCOPE_EXIT {
-		_invalidated();
-	};
-
-	destroy();
+	QUIET_FAIL_COND(margin == p_margin);
+	QUIET_FAIL_COND(!JoltProjectSettings::use_shape_margins());
 
 	margin = p_margin;
+
+	destroy();
 }
 
 String JoltBoxShapeImpl3D::to_string() const {
@@ -39,7 +37,7 @@ String JoltBoxShapeImpl3D::to_string() const {
 }
 
 JPH::ShapeRefC JoltBoxShapeImpl3D::_build() const {
-	const float min_half_extent = half_extents[half_extents.min_axis_index()];
+	const auto min_half_extent = (float)half_extents[half_extents.min_axis_index()];
 	const float shrunk_margin = MIN(margin, min_half_extent * MARGIN_FACTOR);
 	const float actual_margin = JoltProjectSettings::use_shape_margins() ? shrunk_margin : 0.0f;
 

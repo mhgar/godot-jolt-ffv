@@ -18,6 +18,8 @@ set(use_avx $<BOOL:${GDJ_USE_AVX}>)
 set(use_sse4_2 $<BOOL:${GDJ_USE_SSE4_2}>)
 set(use_sse4_2 $<BOOL:${GDJ_USE_SSE4_2}>)
 
+set(is_double_precision $<BOOL:${GDJ_DOUBLE_PRECISION}>)
+
 set(is_msvc_cl $<CXX_COMPILER_ID:MSVC>)
 
 set(dev_definitions
@@ -34,7 +36,7 @@ endif()
 
 gdj_add_external_library(jolt "${configurations}"
 	GIT_REPOSITORY https://github.com/godot-jolt/jolt.git
-	GIT_COMMIT 7d8dea5196d54fbe2a3132217aac171d440de4bb
+	GIT_COMMIT b53b830ca8cd8dff1daffafefa2a6db8a514dfc4
 	LANGUAGE CXX
 	SOURCE_SUBDIR Build
 	OUTPUT_NAME Jolt
@@ -51,12 +53,15 @@ gdj_add_external_library(jolt "${configurations}"
 		$<${use_avx}:JPH_USE_AVX>
 		$<${use_sse4_2}:JPH_USE_SSE4_2>
 		$<${use_sse4_2}:JPH_USE_SSE4_1>
+		$<${is_double_precision}:JPH_DOUBLE_PRECISION>
 	COMPILE_DEFINITIONS_DEBUG
 		${dev_definitions}
 	COMPILE_DEFINITIONS_RELEASE
 		${dev_definitions}
 	CMAKE_CACHE_ARGS
 		-DENABLE_ALL_WARNINGS=FALSE
+		-DCPP_RTTI_ENABLED=TRUE
+		-DENABLE_OBJECT_STREAM=FALSE
 		-DTARGET_HELLO_WORLD=FALSE
 		-DTARGET_PERFORMANCE_TEST=FALSE
 		-DTARGET_SAMPLES=FALSE
@@ -74,6 +79,7 @@ gdj_add_external_library(jolt "${configurations}"
 		-DUSE_SSE4_2=${GDJ_USE_SSE4_2}
 		-DUSE_SSE4_1=${GDJ_USE_SSE4_2}
 		-DUSE_STATIC_MSVC_RUNTIME_LIBRARY=${GDJ_STATIC_RUNTIME_LIBRARY}
+		-DDOUBLE_PRECISION=${GDJ_DOUBLE_PRECISION}
 		${override_cxx_flags_arg}
 	LIBRARY_CONFIG_DEBUG Debug
 	LIBRARY_CONFIG_DEVELOPMENT Release

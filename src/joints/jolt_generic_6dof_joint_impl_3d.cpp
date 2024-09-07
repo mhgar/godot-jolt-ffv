@@ -100,7 +100,7 @@ double JoltGeneric6DOFJointImpl3D::get_param(Axis p_axis, Param p_param) const {
 			return spring_equilibrium[axis_ang];
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -247,7 +247,7 @@ void JoltGeneric6DOFJointImpl3D::set_param(Axis p_axis, Param p_param, double p_
 			_spring_equilibrium_changed(axis_ang);
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		} break;
 	}
 }
@@ -276,7 +276,7 @@ bool JoltGeneric6DOFJointImpl3D::get_flag(Axis p_axis, Flag p_flag) const {
 			return motor_enabled[axis_lin];
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_D_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		}
 	}
 }
@@ -311,7 +311,7 @@ void JoltGeneric6DOFJointImpl3D::set_flag(Axis p_axis, Flag p_flag, bool p_enabl
 			_motor_state_changed(axis_lin);
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		} break;
 	}
 }
@@ -334,7 +334,7 @@ double JoltGeneric6DOFJointImpl3D::get_jolt_param(Axis p_axis, JoltParam p_param
 			return spring_frequency[axis_ang];
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -361,7 +361,7 @@ void JoltGeneric6DOFJointImpl3D::set_jolt_param(Axis p_axis, JoltParam p_param, 
 			_spring_parameters_changed(axis_ang);
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		} break;
 	}
 }
@@ -381,7 +381,7 @@ bool JoltGeneric6DOFJointImpl3D::get_jolt_flag(Axis p_axis, JoltFlag p_flag) con
 			return spring_use_frequency[axis_ang];
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_D_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		}
 	}
 }
@@ -404,7 +404,7 @@ void JoltGeneric6DOFJointImpl3D::set_jolt_flag(Axis p_axis, JoltFlag p_flag, boo
 			_spring_parameters_changed(axis_ang);
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		} break;
 	}
 }
@@ -506,10 +506,10 @@ JPH::Constraint* JoltGeneric6DOFJointImpl3D::_build_6dof(
 	}
 
 	constraint_settings.mSpace = JPH::EConstraintSpace::LocalToBodyCOM;
-	constraint_settings.mPosition1 = to_jolt(p_shifted_ref_a.origin);
+	constraint_settings.mPosition1 = to_jolt_r(p_shifted_ref_a.origin);
 	constraint_settings.mAxisX1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mAxisY1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_Y));
-	constraint_settings.mPosition2 = to_jolt(p_shifted_ref_b.origin);
+	constraint_settings.mPosition2 = to_jolt_r(p_shifted_ref_b.origin);
 	constraint_settings.mAxisX2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mAxisY2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_Y));
 	constraint_settings.mSwingType = JPH::ESwingType::Pyramid;
@@ -635,33 +635,41 @@ void JoltGeneric6DOFJointImpl3D::_update_spring_equilibrium(int32_t p_axis) {
 
 void JoltGeneric6DOFJointImpl3D::_limits_changed() {
 	rebuild();
+	_wake_up_bodies();
 }
 
 void JoltGeneric6DOFJointImpl3D::_limit_spring_parameters_changed(int32_t p_axis) {
 	_update_limit_spring_parameters(p_axis);
+	_wake_up_bodies();
 }
 
 void JoltGeneric6DOFJointImpl3D::_motor_state_changed(int32_t p_axis) {
 	_update_motor_state(p_axis);
 	_update_motor_limit(p_axis);
+	_wake_up_bodies();
 }
 
 void JoltGeneric6DOFJointImpl3D::_motor_speed_changed(int32_t p_axis) {
 	_update_motor_velocity(p_axis);
+	_wake_up_bodies();
 }
 
 void JoltGeneric6DOFJointImpl3D::_motor_limit_changed(int32_t p_axis) {
 	_update_motor_limit(p_axis);
+	_wake_up_bodies();
 }
 
 void JoltGeneric6DOFJointImpl3D::_spring_state_changed(int32_t p_axis) {
 	_update_motor_state(p_axis);
+	_wake_up_bodies();
 }
 
 void JoltGeneric6DOFJointImpl3D::_spring_parameters_changed(int32_t p_axis) {
 	_update_spring_parameters(p_axis);
+	_wake_up_bodies();
 }
 
 void JoltGeneric6DOFJointImpl3D::_spring_equilibrium_changed(int32_t p_axis) {
 	_update_spring_equilibrium(p_axis);
+	_wake_up_bodies();
 }

@@ -52,7 +52,7 @@ double JoltHingeJointImpl3D::get_param(Parameter p_param) const {
 			return motor_max_torque * estimate_physics_step();
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -118,7 +118,7 @@ void JoltHingeJointImpl3D::set_param(Parameter p_param, double p_value) {
 			_motor_limit_changed();
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		} break;
 	}
 }
@@ -135,7 +135,7 @@ double JoltHingeJointImpl3D::get_jolt_param(JoltParameter p_param) const {
 			return motor_max_torque;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -155,8 +155,8 @@ void JoltHingeJointImpl3D::set_jolt_param(JoltParameter p_param, double p_value)
 			_motor_limit_changed();
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled parameter: '%d'", p_param));
-		}
+			ERR_FAIL_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
+		} break;
 	}
 }
 
@@ -169,7 +169,7 @@ bool JoltHingeJointImpl3D::get_flag(Flag p_flag) const {
 			return motor_enabled;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_D_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		}
 	}
 }
@@ -185,7 +185,7 @@ void JoltHingeJointImpl3D::set_flag(Flag p_flag, bool p_enabled) {
 			_motor_state_changed();
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		} break;
 	}
 }
@@ -197,7 +197,7 @@ bool JoltHingeJointImpl3D::get_jolt_flag(JoltFlag p_flag) const {
 			return limit_spring_enabled;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_D_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		}
 	}
 }
@@ -210,7 +210,7 @@ void JoltHingeJointImpl3D::set_jolt_flag(JoltFlag p_flag, bool p_enabled) {
 			_limit_spring_changed();
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		} break;
 	}
 }
@@ -316,10 +316,10 @@ JPH::Constraint* JoltHingeJointImpl3D::_build_hinge(
 	JPH::HingeConstraintSettings constraint_settings;
 
 	constraint_settings.mSpace = JPH::EConstraintSpace::LocalToBodyCOM;
-	constraint_settings.mPoint1 = to_jolt(p_shifted_ref_a.origin);
+	constraint_settings.mPoint1 = to_jolt_r(p_shifted_ref_a.origin);
 	constraint_settings.mHingeAxis1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_Z));
 	constraint_settings.mNormalAxis1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_X));
-	constraint_settings.mPoint2 = to_jolt(p_shifted_ref_b.origin);
+	constraint_settings.mPoint2 = to_jolt_r(p_shifted_ref_b.origin);
 	constraint_settings.mHingeAxis2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_Z));
 	constraint_settings.mNormalAxis2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mLimitsMin = -p_limit;
@@ -349,10 +349,10 @@ JPH::Constraint* JoltHingeJointImpl3D::_build_fixed(
 
 	constraint_settings.mSpace = JPH::EConstraintSpace::LocalToBodyCOM;
 	constraint_settings.mAutoDetectPoint = false;
-	constraint_settings.mPoint1 = to_jolt(p_shifted_ref_a.origin);
+	constraint_settings.mPoint1 = to_jolt_r(p_shifted_ref_a.origin);
 	constraint_settings.mAxisX1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mAxisY1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_Y));
-	constraint_settings.mPoint2 = to_jolt(p_shifted_ref_b.origin);
+	constraint_settings.mPoint2 = to_jolt_r(p_shifted_ref_b.origin);
 	constraint_settings.mAxisX2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mAxisY2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_Y));
 
@@ -396,20 +396,25 @@ void JoltHingeJointImpl3D::_update_motor_limit() {
 
 void JoltHingeJointImpl3D::_limits_changed() {
 	rebuild();
+	_wake_up_bodies();
 }
 
 void JoltHingeJointImpl3D::_limit_spring_changed() {
 	rebuild();
+	_wake_up_bodies();
 }
 
 void JoltHingeJointImpl3D::_motor_state_changed() {
 	_update_motor_state();
+	_wake_up_bodies();
 }
 
 void JoltHingeJointImpl3D::_motor_speed_changed() {
 	_update_motor_velocity();
+	_wake_up_bodies();
 }
 
 void JoltHingeJointImpl3D::_motor_limit_changed() {
 	_update_motor_limit();
+	_wake_up_bodies();
 }

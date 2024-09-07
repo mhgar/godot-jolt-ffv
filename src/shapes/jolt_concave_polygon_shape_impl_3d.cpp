@@ -1,7 +1,6 @@
 #include "jolt_concave_polygon_shape_impl_3d.hpp"
 
 #include "servers/jolt_project_settings.hpp"
-#include "shapes/jolt_custom_double_sided_shape.hpp"
 
 Variant JoltConcavePolygonShapeImpl3D::get_data() const {
 	Dictionary data;
@@ -11,12 +10,6 @@ Variant JoltConcavePolygonShapeImpl3D::get_data() const {
 }
 
 void JoltConcavePolygonShapeImpl3D::set_data(const Variant& p_data) {
-	ON_SCOPE_EXIT {
-		_invalidated();
-	};
-
-	destroy();
-
 	ERR_FAIL_COND(p_data.get_type() != Variant::DICTIONARY);
 
 	const Dictionary data = p_data;
@@ -29,6 +22,8 @@ void JoltConcavePolygonShapeImpl3D::set_data(const Variant& p_data) {
 
 	faces = maybe_faces;
 	backface_collision = maybe_backface_collision;
+
+	destroy();
 }
 
 String JoltConcavePolygonShapeImpl3D::to_string() const {
@@ -76,9 +71,9 @@ JPH::ShapeRefC JoltConcavePolygonShapeImpl3D::_build() const {
 		const Vector3* v2 = vertex + 2;
 
 		jolt_faces.emplace_back(
-			JPH::Float3(v2->x, v2->y, v2->z),
-			JPH::Float3(v1->x, v1->y, v1->z),
-			JPH::Float3(v0->x, v0->y, v0->z)
+			JPH::Float3((float)v2->x, (float)v2->y, (float)v2->z),
+			JPH::Float3((float)v1->x, (float)v1->y, (float)v1->z),
+			JPH::Float3((float)v0->x, (float)v0->y, (float)v0->z)
 		);
 	}
 
@@ -102,26 +97,8 @@ JPH::ShapeRefC JoltConcavePolygonShapeImpl3D::_build() const {
 	JPH::ShapeRefC shape = shape_result.Get();
 
 	if (backface_collision) {
-		return _build_double_sided(shape);
+		return JoltShapeImpl3D::with_double_sided(shape);
 	}
 
 	return shape;
-}
-
-JPH::ShapeRefC JoltConcavePolygonShapeImpl3D::_build_double_sided(const JPH::Shape* p_shape) const {
-	ERR_FAIL_NULL_D(p_shape);
-
-	const JoltCustomDoubleSidedShapeSettings shape_settings(p_shape);
-	const JPH::ShapeSettings::ShapeResult shape_result = shape_settings.Create();
-
-	ERR_FAIL_COND_D_MSG(
-		shape_result.HasError(),
-		vformat(
-			"Failed to make shape double-sided. "
-			"It returned the following error: '%s'.",
-			to_godot(shape_result.GetError())
-		)
-	);
-
-	return shape_result.Get();
 }

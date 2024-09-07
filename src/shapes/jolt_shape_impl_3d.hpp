@@ -36,7 +36,7 @@ public:
 
 	JPH::ShapeRefC try_build();
 
-	void destroy() { jolt_ref = nullptr; }
+	void destroy();
 
 	const JPH::Shape* get_jolt_ref() const { return jolt_ref; }
 
@@ -46,12 +46,6 @@ public:
 		const JPH::Shape* p_shape,
 		const Basis& p_basis,
 		const Vector3& p_origin
-	);
-
-	static JPH::ShapeRefC with_transform(
-		const JPH::Shape* p_shape,
-		const Transform3D& p_transform,
-		const Vector3& p_scale
 	);
 
 	static JPH::ShapeRefC with_center_of_mass_offset(
@@ -66,15 +60,20 @@ public:
 
 	static JPH::ShapeRefC with_user_data(const JPH::Shape* p_shape, uint64_t p_user_data);
 
+	static JPH::ShapeRefC with_double_sided(const JPH::Shape* p_shape);
+
 	static JPH::ShapeRefC without_custom_shapes(const JPH::Shape* p_shape);
 
-	template<typename TCallable>
-	static JPH::ShapeRefC as_compound(TCallable&& p_callable);
+	static Vector3 make_scale_valid(const JPH::Shape* p_shape, const Vector3& p_scale);
+
+	static bool is_scale_valid(
+		const Vector3& p_scale,
+		const Vector3& p_valid_scale,
+		real_t p_tolerance = 0.01f
+	);
 
 protected:
 	virtual JPH::ShapeRefC _build() const = 0;
-
-	virtual void _invalidated();
 
 	String _owners_to_string() const;
 
@@ -85,4 +84,31 @@ protected:
 	JPH::ShapeRefC jolt_ref;
 };
 
-#include "jolt_shape_impl_3d.inl"
+#ifdef GDJ_CONFIG_EDITOR
+
+#define ERR_PRINT_INVALID_SCALE_MSG(m_scale, m_valid_scale, m_msg)               \
+	if (unlikely(!JoltShapeImpl3D::is_scale_valid(m_scale, valid_scale))) {      \
+		ERR_PRINT(vformat(                                                       \
+			"%s "                                                                \
+			"A scale of %v is not supported by Godot Jolt for this shape/body. " \
+			"The scale will instead be treated as %v.",                          \
+			m_msg,                                                               \
+			m_scale,                                                             \
+			valid_scale                                                          \
+		));                                                                      \
+	} else                                                                       \
+		((void)0)
+
+#else // GDJ_CONFIG_EDITOR
+
+#define ERR_PRINT_INVALID_SCALE_MSG(m_scale, m_valid_scale, m_msg)
+
+#endif // GDJ_CONFIG_EDITOR
+
+#define ENSURE_SCALE_VALID(m_shape, m_scale, m_msg)                                      \
+	if (true) {                                                                          \
+		const Vector3 valid_scale = JoltShapeImpl3D::make_scale_valid(m_shape, m_scale); \
+		ERR_PRINT_INVALID_SCALE_MSG(m_scale, valid_scale, m_msg);                        \
+		(m_scale) = valid_scale;                                                         \
+	} else                                                                               \
+		((void)0)

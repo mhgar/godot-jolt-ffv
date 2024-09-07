@@ -96,6 +96,7 @@
 #include <Jolt/Physics/Collision/EstimateCollisionResponse.h>
 #include <Jolt/Physics/Collision/GroupFilter.h>
 #include <Jolt/Physics/Collision/InternalEdgeRemovingCollector.h>
+#include <Jolt/Physics/Collision/ManifoldBetweenTwoFaces.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -119,7 +120,9 @@
 #include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 #include <Jolt/Physics/PhysicsScene.h>
 #include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/SoftBody/SoftBodyContactListener.h>
 #include <Jolt/Physics/SoftBody/SoftBodyCreationSettings.h>
+#include <Jolt/Physics/SoftBody/SoftBodyManifold.h>
 #include <Jolt/Physics/SoftBody/SoftBodyMotionProperties.h>
 #include <Jolt/Physics/SoftBody/SoftBodySharedSettings.h>
 #include <Jolt/RegisterTypes.h>
@@ -157,7 +160,6 @@ using namespace godot;
 #include "containers/inline_vector.hpp"
 #include "containers/local_vector.hpp"
 #include "containers/rid_owner.hpp"
-#include "containers/symmetric_bit_table.hpp"
 #include "misc/bind_macros.hpp"
 #include "misc/error_macros.hpp"
 #include "misc/gdclass_macros.hpp"
@@ -166,6 +168,5 @@ using namespace godot;
 #include "misc/scope_guard.hpp"
 #include "misc/type_conversions.hpp"
 #include "misc/utility_functions.hpp"
-#include "misc/utility_macros.hpp"
 
 // NOLINTEND(readability-duplicate-include)

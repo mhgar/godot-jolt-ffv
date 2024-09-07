@@ -113,7 +113,7 @@ double JoltSliderJointImpl3D::get_param(PhysicsServer3D::SliderJointParam p_para
 			return DEFAULT_ANGULAR_ORTHO_DAMPING;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled slider joint parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled slider joint parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -331,7 +331,7 @@ void JoltSliderJointImpl3D::set_param(PhysicsServer3D::SliderJointParam p_param,
 			}
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled slider joint parameter: '%d'", p_param));
+			ERR_FAIL_REPORT(vformat("Unhandled slider joint parameter: '%d'.", p_param));
 		} break;
 	}
 }
@@ -351,7 +351,7 @@ double JoltSliderJointImpl3D::get_jolt_param(JoltParameter p_param) const {
 			return motor_max_force;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled parameter: '%d'", p_param));
+			ERR_FAIL_D_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
 		}
 	}
 }
@@ -375,8 +375,8 @@ void JoltSliderJointImpl3D::set_jolt_param(JoltParameter p_param, double p_value
 			_motor_limit_changed();
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled parameter: '%d'", p_param));
-		}
+			ERR_FAIL_REPORT(vformat("Unhandled parameter: '%d'.", p_param));
+		} break;
 	}
 }
 
@@ -392,7 +392,7 @@ bool JoltSliderJointImpl3D::get_jolt_flag(JoltFlag p_flag) const {
 			return motor_enabled;
 		}
 		default: {
-			ERR_FAIL_D_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_D_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		}
 	}
 }
@@ -412,7 +412,7 @@ void JoltSliderJointImpl3D::set_jolt_flag(JoltFlag p_flag, bool p_enabled) {
 			_motor_state_changed();
 		} break;
 		default: {
-			ERR_FAIL_MSG(vformat("Unhandled flag: '%d'", p_flag));
+			ERR_FAIL_REPORT(vformat("Unhandled flag: '%d'.", p_flag));
 		} break;
 	}
 }
@@ -519,10 +519,10 @@ JPH::Constraint* JoltSliderJointImpl3D::_build_slider(
 
 	constraint_settings.mSpace = JPH::EConstraintSpace::LocalToBodyCOM;
 	constraint_settings.mAutoDetectPoint = false;
-	constraint_settings.mPoint1 = to_jolt(p_shifted_ref_a.origin);
+	constraint_settings.mPoint1 = to_jolt_r(p_shifted_ref_a.origin);
 	constraint_settings.mSliderAxis1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mNormalAxis1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_Z));
-	constraint_settings.mPoint2 = to_jolt(p_shifted_ref_b.origin);
+	constraint_settings.mPoint2 = to_jolt_r(p_shifted_ref_b.origin);
 	constraint_settings.mSliderAxis2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mNormalAxis2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_Z));
 	constraint_settings.mLimitsMin = -p_limit;
@@ -552,10 +552,10 @@ JPH::Constraint* JoltSliderJointImpl3D::_build_fixed(
 
 	constraint_settings.mSpace = JPH::EConstraintSpace::LocalToBodyCOM;
 	constraint_settings.mAutoDetectPoint = false;
-	constraint_settings.mPoint1 = to_jolt(p_shifted_ref_a.origin);
+	constraint_settings.mPoint1 = to_jolt_r(p_shifted_ref_a.origin);
 	constraint_settings.mAxisX1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mAxisY1 = to_jolt(p_shifted_ref_a.basis.get_column(Vector3::AXIS_Y));
-	constraint_settings.mPoint2 = to_jolt(p_shifted_ref_b.origin);
+	constraint_settings.mPoint2 = to_jolt_r(p_shifted_ref_b.origin);
 	constraint_settings.mAxisX2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_X));
 	constraint_settings.mAxisY2 = to_jolt(p_shifted_ref_b.basis.get_column(Vector3::AXIS_Y));
 
@@ -598,20 +598,25 @@ void JoltSliderJointImpl3D::_update_motor_limit() {
 
 void JoltSliderJointImpl3D::_limits_changed() {
 	rebuild();
+	_wake_up_bodies();
 }
 
 void JoltSliderJointImpl3D::_limit_spring_changed() {
 	rebuild();
+	_wake_up_bodies();
 }
 
 void JoltSliderJointImpl3D::_motor_state_changed() {
 	_update_motor_state();
+	_wake_up_bodies();
 }
 
 void JoltSliderJointImpl3D::_motor_speed_changed() {
 	_update_motor_velocity();
+	_wake_up_bodies();
 }
 
 void JoltSliderJointImpl3D::_motor_limit_changed() {
 	_update_motor_limit();
+	_wake_up_bodies();
 }

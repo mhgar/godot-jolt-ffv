@@ -7,25 +7,20 @@ Variant JoltConvexPolygonShapeImpl3D::get_data() const {
 }
 
 void JoltConvexPolygonShapeImpl3D::set_data(const Variant& p_data) {
-	ON_SCOPE_EXIT {
-		_invalidated();
-	};
-
-	destroy();
-
 	ERR_FAIL_COND(p_data.get_type() != Variant::PACKED_VECTOR3_ARRAY);
 
 	vertices = p_data;
+
+	destroy();
 }
 
 void JoltConvexPolygonShapeImpl3D::set_margin(float p_margin) {
-	ON_SCOPE_EXIT {
-		_invalidated();
-	};
-
-	destroy();
+	QUIET_FAIL_COND(margin == p_margin);
+	QUIET_FAIL_COND(!JoltProjectSettings::use_shape_margins());
 
 	margin = p_margin;
+
+	destroy();
 }
 
 String JoltConvexPolygonShapeImpl3D::to_string() const {
@@ -55,7 +50,7 @@ JPH::ShapeRefC JoltConvexPolygonShapeImpl3D::_build() const {
 	const Vector3* vertices_end = vertices_begin + vertex_count;
 
 	for (const Vector3* vertex = vertices_begin; vertex != vertices_end; ++vertex) {
-		jolt_vertices.emplace_back(vertex->x, vertex->y, vertex->z);
+		jolt_vertices.emplace_back((float)vertex->x, (float)vertex->y, (float)vertex->z);
 	}
 
 	const float actual_margin = JoltProjectSettings::use_shape_margins() ? margin : 0.0f;

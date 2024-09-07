@@ -19,15 +19,13 @@ would use normally, like `RigidBody3D` or `CharacterBody3D`.
 - [What versions of Godot are supported?](#what-versions-of-godot-are-supported)
 - [What platforms are supported?](#what-platforms-are-supported)
 - [How do I get started?](#how-do-i-get-started)
-- [What's the plan going forward?](#whats-the-plan-going-forward)
 - [What settings are there?](#what-settings-are-there)
 - [How do I build from source?](#how-do-i-build-from-source)
-- [What do the versions mean?](#what-do-the-versions-mean)
 - [What's the license?](#whats-the-license)
 
 ## What features are there?
 
-Better performance, mainly, but also just having different characteristics compared to Godot
+Better performance, mainly, but also generally having a more stable simulation compared to Godot
 Physics.
 
 There are also (completely optional) substitute nodes available for all the joints, which line up
@@ -44,12 +42,9 @@ should not be relied upon if determinism is a hard requirement.
 
 - `WorldBoundaryShape3D` is not supported
 - The physics server is not thread-safe (yet)
-- Double-precision builds of Godot are not supported (yet)
 - Memory usage is not reflected in Godot's performance monitors (yet)
 - Ray-casts do not support `face_index`
-- Soft bodies do not support asymmetrical/one-way collisions (yet)
-- Soft bodies do not support the wind properties of `Area3D`
-- Soft bodies do not support the gravity/damping overrides of `Area3D`
+- `SoftBody3D` does not support any interactions with `Area3D`
 
 ## What else is different?
 
@@ -68,13 +63,13 @@ should not be relied upon if determinism is a hard requirement.
 
 Also consider this note from Jolt's [documentation][jdc]:
 
-> In order for the simulation to be accurate, dynamic objects should be in the order of 0.1 to 10
-> meters long and have speeds in the order of 0 to 500 meters per second. Static object should be in
-> the order of 0.1 to 2000 meters long.
+> In order for the simulation to be accurate, dynamic objects should be in the order of 0.1 to 10 m
+> long, have speeds in the order of 0 to 500 m/s and have gravity in the order of 0 to 10 m/s^2.
+> Static object should be in the order of 0.1 to 2000 m long.
 
 ## What versions of Godot are supported?
 
-Currently the **only** supported version is **Godot 4.2** (including 4.2.x).
+Currently the **only** supported version is **Godot 4.3** (including 4.3.x).
 
 ## What platforms are supported?
 
@@ -98,16 +93,6 @@ Fossa) or newer.
 7. Change "Physics Engine" to "JoltPhysics3D"
 8. Restart Godot
 
-## What's the plan going forward?
-
-In no particular order, here are some of the bigger items:
-
-- Adding new types of joints, like Jolt's `DistanceConstraint`
-- Adding support for double-precision, allowing for large worlds
-- Making the physics server thread-safe
-
-See the [`v1.0.0`][prj] project board for a more up-to-date overview.
-
 ## What settings are there?
 
 See [`docs/settings.md`][set] for information about the project settings available in Godot Jolt.
@@ -115,21 +100,6 @@ See [`docs/settings.md`][set] for information about the project settings availab
 ## How do I build from source?
 
 See [`docs/building.md`][bld] for information about how to build Godot Jolt from source.
-
-## What do the versions mean?
-
-Godot Jolt adheres to [Semantic Versioning][smv], formatted as `<major>.<minor>.<patch>`. The major
-version will be incremented when backwards-incompatible API changes are made, the minor version will
-be incremented when backwards-compatible API changes are made and the patch version will be
-incremented when changes are made that don't affect the API.
-
-"API", in this case, refers to any user-facing parts of the extension, such as nodes, properties,
-methods, parameters or project settings.
-
-Note that major version `0.x.y` carries a special meaning in semantic versioning, where even minor
-versions may contain backwards-incompatible changes.
-
-See [`CHANGELOG.md`][chl] for details about what notable changes were included in each version.
 
 ## What's the license?
 
@@ -142,10 +112,7 @@ Godot Jolt is distributed under the MIT license. See [`LICENSE.txt`][lic] for mo
 [jdc]: https://jrouwe.github.io/JoltPhysics/
 [rls]: https://github.com/godot-jolt/godot-jolt/releases/latest
 [ast]: https://godotengine.org/asset-library/asset/1918
-[prj]: https://github.com/orgs/godot-jolt/projects/1
 [set]: docs/settings.md
 [bld]: docs/building.md
-[smv]: https://semver.org/spec/v2.0.0.html
-[chl]: CHANGELOG.md
 [lic]: LICENSE.txt
 [trd]: THIRDPARTY.txt

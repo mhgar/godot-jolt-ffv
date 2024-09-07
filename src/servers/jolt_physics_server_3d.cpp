@@ -22,10 +22,17 @@
 #include "spaces/jolt_physics_direct_space_state_3d.hpp"
 #include "spaces/jolt_space_3d.hpp"
 
+namespace {
+
+constexpr char PHYSICS_SERVER_NAME[] = "JoltPhysicsServer3D";
+
+} // namespace
+
 void JoltPhysicsServer3D::_bind_methods() {
+	// clang-format off
+
 #ifdef GDJ_CONFIG_EDITOR
 	BIND_METHOD(JoltPhysicsServer3D, dump_debug_snapshots, "dir");
-
 	BIND_METHOD(JoltPhysicsServer3D, space_dump_debug_snapshot, "space", "dir");
 #endif // GDJ_CONFIG_EDITOR
 
@@ -67,14 +74,16 @@ void JoltPhysicsServer3D::_bind_methods() {
 	BIND_METHOD(JoltPhysicsServer3D, cone_twist_joint_get_applied_force, "joint");
 	BIND_METHOD(JoltPhysicsServer3D, cone_twist_joint_get_applied_torque, "joint");
 
-	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_get_jolt_param, "joint", "param");
-	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_set_jolt_param, "joint", "param", "value");
+	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_get_jolt_param, "joint", "axis", "param");
+	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_set_jolt_param, "joint", "axis", "param", "value");
 
-	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_get_jolt_flag, "joint", "flag");
-	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_set_jolt_flag, "joint", "flag", "value");
+	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_get_jolt_flag, "joint", "axis", "flag");
+	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_set_jolt_flag, "joint", "axis", "flag", "value");
 
 	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_get_applied_force, "joint");
 	BIND_METHOD(JoltPhysicsServer3D, generic_6dof_joint_get_applied_torque, "joint");
+
+	// clang-format on
 
 	BIND_ENUM_CONSTANT(HINGE_JOINT_LIMIT_SPRING_FREQUENCY);
 	BIND_ENUM_CONSTANT(HINGE_JOINT_LIMIT_SPRING_DAMPING);
@@ -102,20 +111,10 @@ void JoltPhysicsServer3D::_bind_methods() {
 	BIND_ENUM_CONSTANT(CONE_TWIST_JOINT_FLAG_ENABLE_SWING_MOTOR);
 	BIND_ENUM_CONSTANT(CONE_TWIST_JOINT_FLAG_ENABLE_TWIST_MOTOR);
 
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_LINEAR_SPRING_STIFFNESS);
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_LINEAR_SPRING_DAMPING);
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_LINEAR_SPRING_EQUILIBRIUM_POINT);
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_ANGULAR_SPRING_STIFFNESS);
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_ANGULAR_SPRING_DAMPING);
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_ANGULAR_SPRING_EQUILIBRIUM_POINT);
-
 	BIND_ENUM_CONSTANT(G6DOF_JOINT_LINEAR_SPRING_FREQUENCY);
 	BIND_ENUM_CONSTANT(G6DOF_JOINT_LINEAR_LIMIT_SPRING_FREQUENCY);
 	BIND_ENUM_CONSTANT(G6DOF_JOINT_LINEAR_LIMIT_SPRING_DAMPING);
 	BIND_ENUM_CONSTANT(G6DOF_JOINT_ANGULAR_SPRING_FREQUENCY);
-
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_FLAG_ENABLE_ANGULAR_SPRING);
-	BIND_ENUM_CONSTANT(G6DOF_JOINT_FLAG_ENABLE_LINEAR_SPRING);
 
 	BIND_ENUM_CONSTANT(G6DOF_JOINT_FLAG_ENABLE_LINEAR_LIMIT_SPRING);
 	BIND_ENUM_CONSTANT(G6DOF_JOINT_FLAG_ENABLE_LINEAR_SPRING_FREQUENCY);
@@ -123,19 +122,22 @@ void JoltPhysicsServer3D::_bind_methods() {
 }
 
 JoltPhysicsServer3D::JoltPhysicsServer3D() {
-	const StringName server_name = NAMEOF(JoltPhysicsServer3D);
-
 	Engine* engine = Engine::get_singleton();
 
-	if (engine->has_singleton(server_name)) {
-		engine->unregister_singleton(server_name);
+	if (engine->has_singleton(PHYSICS_SERVER_NAME)) {
+		engine->unregister_singleton(PHYSICS_SERVER_NAME);
 	}
 
-	engine->register_singleton(server_name, this);
+	engine->register_singleton(PHYSICS_SERVER_NAME, this);
 }
 
 JoltPhysicsServer3D::~JoltPhysicsServer3D() {
-	Engine::get_singleton()->unregister_singleton(NAMEOF(JoltPhysicsServer3D));
+	Engine::get_singleton()->unregister_singleton(PHYSICS_SERVER_NAME);
+}
+
+JoltPhysicsServer3D* JoltPhysicsServer3D::get_singleton() {
+	static auto* instance = dynamic_cast<JoltPhysicsServer3D*>(PhysicsServer3D::get_singleton());
+	return instance;
 }
 
 RID JoltPhysicsServer3D::_world_boundary_shape_create() {
@@ -273,8 +275,10 @@ void JoltPhysicsServer3D::_space_set_active(const RID& p_space, bool p_active) {
 	ERR_FAIL_NULL(space);
 
 	if (p_active) {
+		space->set_active(true);
 		active_spaces.insert(space);
 	} else {
+		space->set_active(false);
 		active_spaces.erase(space);
 	}
 }
@@ -471,14 +475,28 @@ void JoltPhysicsServer3D::_area_set_shape_disabled(
 }
 
 void JoltPhysicsServer3D::_area_attach_object_instance_id(const RID& p_area, uint64_t p_id) {
-	JoltAreaImpl3D* area = area_owner.get_or_null(p_area);
+	RID area_rid = p_area;
+
+	if (space_owner.owns(area_rid)) {
+		const JoltSpace3D* space = space_owner.get_or_null(area_rid);
+		area_rid = space->get_default_area()->get_rid();
+	}
+
+	JoltAreaImpl3D* area = area_owner.get_or_null(area_rid);
 	ERR_FAIL_NULL(area);
 
 	area->set_instance_id(ObjectID(p_id));
 }
 
 uint64_t JoltPhysicsServer3D::_area_get_object_instance_id(const RID& p_area) const {
-	const JoltAreaImpl3D* area = area_owner.get_or_null(p_area);
+	RID area_rid = p_area;
+
+	if (space_owner.owns(area_rid)) {
+		const JoltSpace3D* space = space_owner.get_or_null(area_rid);
+		area_rid = space->get_default_area()->get_rid();
+	}
+
+	JoltAreaImpl3D* area = area_owner.get_or_null(area_rid);
 	ERR_FAIL_NULL_D(area);
 
 	return area->get_instance_id();
@@ -510,7 +528,14 @@ void JoltPhysicsServer3D::_area_set_transform(const RID& p_area, const Transform
 }
 
 Variant JoltPhysicsServer3D::_area_get_param(const RID& p_area, AreaParameter p_param) const {
-	const JoltAreaImpl3D* area = area_owner.get_or_null(p_area);
+	RID area_rid = p_area;
+
+	if (space_owner.owns(area_rid)) {
+		const JoltSpace3D* space = space_owner.get_or_null(area_rid);
+		area_rid = space->get_default_area()->get_rid();
+	}
+
+	JoltAreaImpl3D* area = area_owner.get_or_null(area_rid);
 	ERR_FAIL_NULL_D(area);
 
 	return area->get_param(p_param);
@@ -1117,9 +1142,10 @@ PhysicsDirectBodyState3D* JoltPhysicsServer3D::_body_get_direct_state(const RID&
 	JoltBodyImpl3D* body = body_owner.get_or_null(p_body);
 
 	// Unlike most other server methods this one is meant to quietly return null if the body has
-	// since been freed, which is used in places like `move_and_slide` to determine whether a
-	// previously used platform has been freed or not.
+	// since been freed or removed from the scene tree, which is used in places like
+	// `move_and_slide` to determine whether a previously used platform has been freed or not.
 	QUIET_FAIL_NULL_D(body);
+	QUIET_FAIL_NULL_D(body->get_space());
 
 	return body->get_direct_state();
 }

@@ -7,6 +7,8 @@ enum JointWorldNode : int32_t {
 	JOINT_WORLD_NODE_B
 };
 
+// clang-format off
+
 constexpr char SLEEP_ENABLED[] = "physics/jolt_3d/sleep/enabled";
 constexpr char SLEEP_VELOCITY_THRESHOLD[] = "physics/jolt_3d/sleep/velocity_threshold";
 constexpr char SLEEP_TIME_THRESHOLD[] = "physics/jolt_3d/sleep/time_threshold";
@@ -15,8 +17,10 @@ constexpr char SHAPE_MARGINS[] = "physics/jolt_3d/collisions/use_shape_margins";
 constexpr char EDGE_REMOVAL[] = "physics/jolt_3d/collisions/use_enhanced_internal_edge_removal";
 constexpr char AREAS_DETECT_STATIC[] = "physics/jolt_3d/collisions/areas_detect_static_bodies";
 constexpr char KINEMATIC_CONTACTS[] = "physics/jolt_3d/collisions/report_all_kinematic_contacts";
-
-constexpr char SOFT_BODY_POINT_MARGIN[] = "physics/jolt_3d/soft_bodies/point_margin";
+constexpr char SOFT_BODY_POINT_MARGIN[] = "physics/jolt_3d/collisions/soft_body_point_margin";
+constexpr char PAIR_CACHE_ENABLED[] = "physics/jolt_3d/collisions/body_pair_cache_enabled";
+constexpr char PAIR_CACHE_DISTANCE[] = "physics/jolt_3d/collisions/body_pair_cache_distance_threshold";
+constexpr char PAIR_CACHE_ANGLE[] = "physics/jolt_3d/collisions/body_pair_cache_angle_threshold";
 
 constexpr char JOINT_WORLD_NODE[] = "physics/jolt_3d/joints/world_node";
 
@@ -43,6 +47,8 @@ constexpr char MAX_TEMP_MEMORY[] = "physics/jolt_3d/limits/max_temporary_memory"
 
 constexpr char RUN_ON_SEPARATE_THREAD[] = "physics/3d/run_on_separate_thread";
 constexpr char MAX_THREADS[] = "threading/worker_pool/max_threads";
+
+// clang-format on
 
 void register_setting(
 	const String& p_name,
@@ -158,8 +164,11 @@ void JoltProjectSettings::register_settings() {
 	register_setting_ranged(POSITION_CORRECTION, 20.0f, U"0,100,0.1,suffix:%");
 	register_setting_ranged(ACTIVE_EDGE_THRESHOLD, Math::deg_to_rad(50.0f), U"0,90,0.01,radians");
 	register_setting_hinted(BOUNCE_VELOCITY_THRESHOLD, 1.0f, U"suffix:m/s");
-	register_setting_ranged(CONTACT_DISTANCE, 0.02f, U"0,1,0.001,or_greater,suffix:m");
-	register_setting_ranged(CONTACT_PENETRATION, 0.02f, U"0,1,0.001,or_greater,suffix:m");
+	register_setting_ranged(CONTACT_DISTANCE, 0.02f, U"0,1,0.00001,or_greater,suffix:m");
+	register_setting_ranged(CONTACT_PENETRATION, 0.02f, U"0,1,0.00001,or_greater,suffix:m");
+	register_setting_plain(PAIR_CACHE_ENABLED, true);
+	register_setting_ranged(PAIR_CACHE_DISTANCE, 0.001f, U"0,0.01,0.00001,or_greater,suffix:m");
+	register_setting_ranged(PAIR_CACHE_ANGLE, Math::deg_to_rad(2.0f), U"0,180,0.01,radians");
 
 	register_setting_ranged(MAX_LINEAR_VELOCITY, 500.0f, U"0,500,0.01,or_greater,suffix:m/s");
 	register_setting_ranged(MAX_ANGULAR_VELOCITY, 2700.0f, U"0,2700,0.01,or_greater,suffix:°/s");
@@ -272,6 +281,21 @@ float JoltProjectSettings::get_contact_penetration() {
 	return value;
 }
 
+bool JoltProjectSettings::is_pair_cache_enabled() {
+	static const auto value = get_setting<bool>(PAIR_CACHE_ENABLED);
+	return value;
+}
+
+float JoltProjectSettings::get_pair_cache_distance() {
+	static const auto value = Math::square(get_setting<float>(PAIR_CACHE_DISTANCE));
+	return value;
+}
+
+float JoltProjectSettings::get_pair_cache_angle() {
+	static const auto value = Math::cos(get_setting<float>(PAIR_CACHE_ANGLE) / 2.0f);
+	return value;
+}
+
 float JoltProjectSettings::get_max_linear_velocity() {
 	static const auto value = get_setting<float>(MAX_LINEAR_VELOCITY);
 	return value;
@@ -287,7 +311,7 @@ int32_t JoltProjectSettings::get_max_bodies() {
 	return value;
 }
 
-int32_t JoltProjectSettings::get_max_body_pairs() {
+int32_t JoltProjectSettings::get_max_pairs() {
 	static const auto value = get_setting<int32_t>(MAX_PAIRS);
 	return value;
 }

@@ -9,18 +9,73 @@ Breaking changes are denoted with ⚠️.
 
 ## [Unreleased]
 
+## [0.13.0] - 2024-08-15
+
+### Removed
+
+- ⚠️ Removed any `JoltPhysicsServer3D.G6DOF_*` enums that were previously (i.e. before Godot 4.3)
+  not exposed by Godot itself. These can now be found as `PhysicsServer3D.G6DOF_*` instead.
+
 ### Changed
 
+- ⚠️ Changed the way that the `body_test_motion` method of `PhysicsServer3D` discards contacts,
+  which should fix issues related to jitter/ping-ponging. This affects `move_and_slide`,
+  `move_and_collide` and `test_move`.
+- ⚠️ Changed the inertia of shapeless bodies to be `(1, 1, 1)`, to match Godot Physics.
 - Changed `SeparationRayShape3D` to not treat other convex shapes as solid, meaning it will now only
   ever collide with the hull of other convex shapes, which better matches Godot Physics.
+- Changed so that modifying joint properties now wake up any bodies connected to them.
 
 ### Added
 
 - Added support for `SoftBody3D`.
+- Added support for double-precision.
+- Added `compatibility_maximum` to `godot-jolt.gdextension` for controlling the maximum allowed
+  Godot version. Note that changing this may expose you to subtle (or not so subtle)
+  incompatibilities in the extension API. Change at your own risk.
 - ⚠️ Added new project setting, "Use Enhanced Internal Edge Detection", which can help alleviate
   collisions with internal edges of `ConcavePolygonShape3D` and `HeightMapShape3D` shapes, also
   known as ghost collisions. This setting is enabled by default and may change the behavior of
-  character controllers relying things like `move_and_slide`.
+  character controllers relying things like `move_and_slide` or `move_and_collide`.
+- Added support for partial custom inertia, where leaving one or two components at zero will use the
+  automatically calculated values for those specific components.
+- Added error-handling for invalid scaling of bodies/shapes.
+- Added project settings "Body Pair Cache Enabled", "Body Pair Cache Distance Threshold" and "Body
+  Pair Cache Angle Threshold" to allow fine-tuning the scale by which collision results are reused
+  inbetween physics ticks.
+- Added the appropriate floating-point precision feature tag to `godot-jolt.gdextension` to prevent
+  accidentally loading a single-precision build of Godot Jolt in a double-precision build of Godot
+  and vice versa.
+
+### Fixed
+
+- ⚠️ Fixed issue with shape queries not returning the full contact manifold. This applies to the
+  `collide_shape` method of `PhysicsDirectSpaceState3D` as well as the `body_test_motion` method of
+  `PhysicsServer3D`, which subsequently affects the `test_move` and `move_and_collide` methods of
+  `PhysicsBody3D` as well as the `move_and_slide` method of `CharacterBody3D`.
+- ⚠️ Fixed issue with the `body_get_direct_state` method of `PhysicsServer3D` returning a non-null
+  reference when the body has no space.
+- Fixed issue with not being able to pass a physics space `RID` to `area_get_param`,
+  `area_attach_object_instance_id` and `area_get_object_instance_id`.
+- Fixed issue where the `inverse_inertia` property of `PhysicsDirectBodyState3D` would have some of
+  its components swapped.
+- Fixed issue where shapeless bodies wouldn't have custom center-of-mass applied to them.
+- Fixed issue with high (>1) damping values producing different results across different update
+  frequencies.
+- Fixed issue where physics queries performed within the editor (e.g. editor plugins or tool
+  scripts) would end up ignoring potentially large swathes of bodies in scenes with many physics
+  bodies.
+- Fixed crash when setting a negative `max_contacts_reported` on `RigidBody3D`.
+- Fixed issue with certain `generic_6dof_joint_*` methods on `JoltPhysicsServer3D` not having the
+  correct parameter names.
+- Fixed issue where sleep timer would not reset when applying force/torque to a `RigidBody3D`.
+- Fixed issue where `Area3D` would fail to report overlap with certain `ConcavePolygonShape3D`.
+- Fixed crash when re-enabling the node processing of a disabled body that's connected to a two-body
+  joint.
+- Fixed issue where re-adding previously used physics bodies to the scene tree could result in many
+  "Unhandled override mode" errors in the Output log.
+- Fixed memory leak when changing the data/properties of `CapsuleShape3D`, `CylinderShape3D`,
+  `SeparationRayShape3D`, `ConcavePolygonShape3D`, and `HeightMapShape3D`.
 
 ## [0.12.0] - 2024-01-07
 
@@ -370,7 +425,8 @@ Breaking changes are denoted with ⚠️.
 
 Initial release.
 
-[Unreleased]: https://github.com/godot-jolt/godot-jolt/compare/v0.12.0-stable...HEAD
+[Unreleased]: https://github.com/godot-jolt/godot-jolt/compare/v0.13.0-stable...HEAD
+[0.13.0]: https://github.com/godot-jolt/godot-jolt/compare/v0.12.0-stable...v0.13.0-stable
 [0.12.0]: https://github.com/godot-jolt/godot-jolt/compare/v0.11.0-stable...v0.12.0-stable
 [0.11.0]: https://github.com/godot-jolt/godot-jolt/compare/v0.10.0-stable...v0.11.0-stable
 [0.10.0]: https://github.com/godot-jolt/godot-jolt/compare/v0.9.0-stable...v0.10.0-stable
